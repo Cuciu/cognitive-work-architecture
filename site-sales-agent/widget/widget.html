@@ -1,0 +1,530 @@
+<!--
+  ===========================================================================
+  Cognitive Work Architecture — Site Sales Agent — Chat Widget (Production)
+  ===========================================================================
+  Self-contained chat widget with teaser bubbles, Turnstile bot protection,
+  conversation memory, and lead capture. Single file — paste before </body>.
+
+  ARCHITECTURE DECISIONS:
+    - Single file: HTML + CSS + JS inline. No build step, no dependencies.
+      Paste one snippet, done. Works on WordPress, Webflow, static HTML.
+    - !important on positioning: required to override WordPress page builders
+      (Elementor, Divi, WPBakery) that inject their own z-index/position rules.
+    - z-index 2147483647 (max int32): ensures the widget floats above every
+      WordPress plugin, popup, and sticky header.
+    - Turnstile loaded async/defer: doesn't block page render.
+
+  CUSTOMIZATION:
+    1. Replace --sa-brand with your brand color
+    2. Replace AGENT_URL / LEAD_URL with your Cloud Function endpoints
+    3. Replace SITE_KEY with your Cloudflare Turnstile site key
+    4. Update greeting text and teaser messages
+
+  Repo:   cognitive-work-architecture/site-sales-agent
+  Module: widget
+  License: MIT
+  ===========================================================================
+-->
+<meta charset="utf-8">
+
+<!-- SECURITY: Cloudflare Turnstile — loaded async so it doesn't block page render -->
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+<style>
+  /* -----------------------------------------------------------------------
+     BRANDING — Single variable reskins the entire widget
+     ----------------------------------------------------------------------- */
+  :root { --sa-brand: #0d497a; }
+
+  /* -----------------------------------------------------------------------
+     LAUNCHER — Fixed button with pulse animation and notification dot
+     !important overrides WordPress page builder positioning rules
+     ----------------------------------------------------------------------- */
+  #sa-launcher {
+    position: fixed !important; bottom: 90px !important; right: 24px !important;
+    z-index: 2147483647 !important;
+    background: var(--sa-brand); color: #fff;
+    border: none; border-radius: 50px;
+    padding: 14px 20px; font-size: 15px; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,.25);
+    display: flex; align-items: center; gap: 8px;
+    animation: sa-pulse 2.5s infinite;
+  }
+
+  /* ENGAGEMENT: Pulse animation draws attention without being intrusive.
+     Stops naturally after the visitor notices the button. */
+  @keyframes sa-pulse {
+    0%   { box-shadow: 0 4px 14px rgba(13,73,122,.3), 0 0 0 0 rgba(13,73,122,.5); }
+    70%  { box-shadow: 0 4px 14px rgba(13,73,122,.3), 0 0 0 14px rgba(13,73,122,0); }
+    100% { box-shadow: 0 4px 14px rgba(13,73,122,.3), 0 0 0 0 rgba(13,73,122,0); }
+  }
+
+  /* Notification dot — signals "something to see" */
+  #sa-dot {
+    position: absolute; top: -4px; right: -4px;
+    width: 14px; height: 14px;
+    background: #e53935; border-radius: 50%; border: 2px solid #fff;
+  }
+
+  /* -----------------------------------------------------------------------
+     TEASER BUBBLE — Rotating auto-ask prompt, shown once per session
+     Slides in from below with animation. Click opens chat + sends question.
+     ----------------------------------------------------------------------- */
+  #sa-teaser {
+    position: fixed !important; bottom: 150px !important; right: 24px !important;
+    z-index: 2147483646 !important;
+    background: #fff; color: #1a1a1a;
+    padding: 12px 16px; border-radius: 14px;
+    max-width: 280px; font-size: 14px; line-height: 1.4;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    display: none;
+    font-family: system-ui, Segoe UI, Arial, sans-serif;
+    border: 1px solid #e6e8eb;
+    animation: sa-slidein .4s ease;
+  }
+  @keyframes sa-slidein {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  #sa-teaser b { color: var(--sa-brand); }
+  #sa-teaser-close {
+    position: absolute; top: 4px; right: 8px;
+    color: #999; font-size: 16px; line-height: 1; cursor: pointer;
+  }
+
+  /* -----------------------------------------------------------------------
+     CHAT PANEL — Responsive container
+     ----------------------------------------------------------------------- */
+  #sa-panel {
+    position: fixed !important; bottom: 90px !important; right: 24px !important;
+    z-index: 2147483647 !important;
+    width: 360px; max-width: 92vw;
+    height: 520px; max-height: 80vh;
+    display: none; flex-direction: column;
+    background: #fff; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,.3);
+    font-family: system-ui, Segoe UI, Arial, sans-serif;
+    box-sizing: border-box;
+  }
+  #sa-panel * { box-sizing: border-box; }
+
+  /* Header */
+  #sa-head {
+    background: var(--sa-brand); color: #fff;
+    padding: 12px 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #sa-head b { font-size: 15px; }
+  #sa-close {
+    background: none; border: none; color: #fff;
+    font-size: 22px; line-height: 1; cursor: pointer;
+  }
+
+  /* Message log */
+  #sa-log { flex: 1; overflow-y: auto; padding: 14px; background: #f7f8fa; }
+
+  /* Message bubbles */
+  .sa-msg {
+    margin: 8px 0; padding: 10px 12px;
+    border-radius: 12px; font-size: 14px; line-height: 1.45;
+    max-width: 85%; word-wrap: break-word; overflow-wrap: anywhere;
+  }
+  .sa-user {
+    background: var(--sa-brand); color: #fff;
+    margin-left: auto; border-bottom-right-radius: 3px;
+  }
+  .sa-bot {
+    background: #fff; color: #1a1a1a;
+    border: 1px solid #e6e8eb; border-bottom-left-radius: 3px;
+  }
+  .sa-typing { opacity: .6; }
+
+  /* Footer with input and Turnstile container */
+  #sa-foot {
+    display: flex; flex-direction: column;
+    border-top: 1px solid #e6e8eb; padding: 8px; background: #fff;
+  }
+  #sa-inputrow { display: flex; }
+  #sa-input {
+    flex: 1; min-width: 0;
+    border: 1px solid #d7dbe0; border-radius: 10px;
+    padding: 10px; font-size: 14px; outline: none;
+  }
+  #sa-send {
+    margin-left: 8px; background: var(--sa-brand); color: #fff;
+    border: none; border-radius: 10px;
+    padding: 0 16px; font-size: 14px;
+    white-space: nowrap; cursor: pointer;
+  }
+  #sa-send:disabled { opacity: .5; }
+
+  /* Turnstile widget container */
+  #sa-ts { margin-top: 8px; }
+
+  /* CTA buttons and lead capture form */
+  .cta-button {
+    display: inline-block; margin-top: 6px;
+    background: var(--sa-brand); color: #fff;
+    text-decoration: none; padding: 8px 14px;
+    border-radius: 8px; font-size: 13px;
+  }
+  .sa-lead { margin-top: 6px; }
+  .sa-lead input {
+    display: block; width: 100%; margin: 4px 0;
+    padding: 8px; border: 1px solid #d7dbe0;
+    border-radius: 8px; font-size: 13px;
+  }
+  .sa-lead button {
+    background: var(--sa-brand); color: #fff;
+    border: none; border-radius: 8px;
+    padding: 8px 14px; font-size: 13px;
+    margin-top: 4px; cursor: pointer;
+  }
+  #sa-lead-status { font-size: 12px; color: #444; margin-top: 4px; }
+</style>
+
+<!-- TEASER BUBBLE — Appears once per session with a random engagement hook -->
+<div id="sa-teaser">
+  <span id="sa-teaser-close">×</span>
+  <span id="sa-teaser-text"></span>
+</div>
+
+<!-- LAUNCHER BUTTON with notification dot -->
+<button id="sa-launcher">
+  <span id="sa-dot"></span>💬 Chat with us
+</button>
+
+<!-- CHAT PANEL -->
+<div id="sa-panel">
+  <div id="sa-head">
+    <b>Sky Alleys Assistant</b>
+    <button id="sa-close">×</button>
+  </div>
+  <div id="sa-log"></div>
+  <div id="sa-foot">
+    <div id="sa-inputrow">
+      <input id="sa-input" type="text"
+             placeholder="Ask about our services…"
+             autocomplete="off" />
+      <button id="sa-send">Send</button>
+    </div>
+    <!-- Turnstile renders here (interaction-only mode = invisible) -->
+    <div id="sa-ts"></div>
+  </div>
+</div>
+
+<script>
+/**
+ * Site Sales Agent — Widget Logic (inline, production)
+ *
+ * See widget/README.md for architecture notes.
+ * See sales-agent/main.py for server-side guardrails.
+ */
+(function () {
+  // ========================================================================
+  // CONFIG — Replace with your endpoints and Turnstile key
+  // ========================================================================
+  const AGENT_URL   = "https://REGION-PROJECT_ID.cloudfunctions.net/sales-agent";
+  const LEAD_URL    = "https://REGION-PROJECT_ID.cloudfunctions.net/capture-lead";
+  const SITE_KEY    = "YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY";
+
+  // BUDGET: Client-side history cap — defense in depth with server-side limit
+  const MAX_HISTORY = 10;
+
+  // Stable session ID — persisted in localStorage
+  const SESSION_ID = (() => {
+    let s = localStorage.getItem("sa_session_id");
+    if (!s) {
+      s = "sess-" + Math.random().toString(36).slice(2) +
+          Date.now().toString(36);
+      localStorage.setItem("sa_session_id", s);
+    }
+    return s;
+  })();
+
+  // ========================================================================
+  // TEASERS — Rotating engagement hooks, one shown per session
+  // ========================================================================
+  const TEASERS = [
+    { msg: "👋 <b>Hi there!</b> Cloud migrations are hard — we've made them <b>33% cheaper</b>. Ask me how.",
+      ask: "How do you make cloud migrations 33% cheaper?" },
+    { msg: "💡 <b>Hey!</b> AI pilots rarely fail on tech — they fail on governance. We fix that.",
+      ask: "Why do AI pilots fail on governance, and how do you fix that?" },
+    { msg: "🤖 <b>Hi!</b> Most AI agents run without cost controls. Ours don't. Ask me why.",
+      ask: "How do you add cost controls to AI agents?" },
+    { msg: "🎯 <b>Welcome!</b> Boards want AI answers, not experiments. We deliver them in <b>3 weeks</b>.",
+      ask: "What is your 3-week board AI reality check?" },
+    { msg: "🚀 <b>Hey!</b> Tired of paying for consulting hours with no measurable result? So were we.",
+      ask: "How is your consulting model different from billing hours?" },
+    { msg: "📊 <b>Hi there!</b> Enterprise AI at scale needs governance baked in — not bolted on. Ask me more.",
+      ask: "How do you bake governance into enterprise AI at scale?" },
+    { msg: "🔒 <b>Hello!</b> Regulated industry? We run AI in <b>air-gapped environments</b>. Ask me how.",
+      ask: "How do you run AI in air-gapped or regulated environments?" },
+    { msg: "🤝 <b>Hi!</b> Evaluating a tech acquisition? Our <b>8-dimension framework</b> catches what others miss.",
+      ask: "Tell me about your 8-dimension technical due diligence framework." },
+    { msg: "⚡ <b>Hey!</b> We don't bill hours — we co-invest in your outcome. Curious how that works?",
+      ask: "How does your outcome-based, co-invested model work?" },
+    { msg: "🏭 <b>Hi there!</b> Factory-floor AI inference — offline, governed, and production-ready. Ask me more.",
+      ask: "How do you deploy AI inference on the factory floor?" }
+  ];
+  const chosenTeaser = TEASERS[Math.floor(Math.random() * TEASERS.length)];
+
+  // ========================================================================
+  // STATE
+  // ========================================================================
+  let lastTier = "Full";
+  let pendingQuestion = null;
+  let history = [];
+
+  const $ = (id) => document.getElementById(id);
+  const log = $("sa-log"), input = $("sa-input"), sendBtn = $("sa-send");
+  const panel = $("sa-panel"), launcher = $("sa-launcher"), closeBtn = $("sa-close");
+  const teaser = $("sa-teaser"), teaserClose = $("sa-teaser-close"), dot = $("sa-dot");
+
+  // ========================================================================
+  // TURNSTILE — Token lifecycle: render → use → renew
+  // ========================================================================
+  let tsWidgetId = null, tsToken = "";
+
+  function token() { return tsToken; }
+  function renewTS() {
+    tsToken = "";
+    if (window.turnstile && tsWidgetId !== null) {
+      try { turnstile.reset(tsWidgetId); } catch(e) {}
+    }
+  }
+  function onToken(t) {
+    tsToken = t;
+    if (pendingQuestion) {
+      const q = pendingQuestion;
+      pendingQuestion = null;
+      doSend(q);
+    }
+  }
+  function renderTS() {
+    if (tsWidgetId !== null) return;
+    if (window.turnstile && typeof turnstile.render === "function") {
+      try {
+        tsWidgetId = turnstile.render('#sa-ts', {
+          sitekey: SITE_KEY,
+          callback: onToken,
+          'expired-callback': () => { tsToken = ""; },
+          'error-callback': () => { tsToken = ""; },
+          appearance: 'interaction-only'
+        });
+      } catch(e) {}
+    } else {
+      setTimeout(renderTS, 300);
+    }
+  }
+  renderTS();
+
+  // ========================================================================
+  // HELPERS
+  // ========================================================================
+
+  function addMsg(html, who) {
+    const d = document.createElement("div");
+    d.className = "sa-msg sa-" + who;
+    d.innerHTML = html;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function escapeHtml(t) {
+    var d = document.createElement("div");
+    d.textContent = (t == null ? "" : String(t));
+    return d.innerHTML;
+  }
+
+  function pushHistory(role, text) {
+    history.push({ role: role, text: (text || "").toString() });
+    if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
+  }
+
+  function leadForm() {
+    return "<div class='sa-lead'><p>Leave your email and we'll follow up:</p>"
+      + "<input id='sa-lead-email' type='email' placeholder='you@company.com'/>"
+      + "<input id='sa-lead-company' type='text' placeholder='Company (optional)'/>"
+      + "<button id='sa-lead-submit'>Send</button>"
+      + "<div id='sa-lead-status'></div></div>";
+  }
+
+  async function submitLead() {
+    const email = ($("sa-lead-email").value || "").trim();
+    const company = ($("sa-lead-company").value || "").trim();
+    const status = $("sa-lead-status");
+    if (!email) { status.textContent = "Please enter a valid email."; return; }
+    status.textContent = "Sending…";
+    try {
+      const r = await fetch(LEAD_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email, company, session_id: SESSION_ID,
+          source: "floating_bubble", tier: lastTier, cf_token: token()
+        })
+      });
+      const j = await r.json();
+      status.textContent = j.status === "captured"
+        ? "Thanks! We'll be in touch."
+        : (j.error || "Something went wrong.");
+      renewTS();
+    } catch(e) {
+      status.textContent = "Network error — please try again.";
+      renewTS();
+    }
+  }
+
+  // ========================================================================
+  // CORE SEND
+  // ========================================================================
+
+  async function doSend(msg) {
+    addMsg(escapeHtml(msg), "user");
+    sendBtn.disabled = true;
+    pushHistory("user", msg);
+    addMsg("<span class='sa-typing'>…</span>", "bot");
+    const typing = log.lastChild;
+    try {
+      const r = await fetch(AGENT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: msg, session_id: SESSION_ID,
+          history: history, cf_token: token()
+        })
+      });
+      const j = await r.json();
+      typing.remove();
+      lastTier = j.tier || lastTier;
+      const isEnd = (j.tier === "SessionCap" || j.tier === "Degraded");
+
+      if (j.html) {
+        addMsg(j.html, "bot");
+        pushHistory("model", (j.reply || ""));
+        if (isEnd) addMsg(leadForm(), "bot");
+      } else if (j.reply) {
+        addMsg(escapeHtml(j.reply).replace(/\n/g, "<br>"), "bot");
+        pushHistory("model", j.reply);
+        if (j.cta_html) addMsg(j.cta_html, "bot");
+        if (isEnd) addMsg(leadForm(), "bot");
+      } else if (j.error) {
+        addMsg("⚠️ " + escapeHtml(j.error), "bot");
+      } else {
+        addMsg("Hmm, I didn't catch that. Try rephrasing?", "bot");
+      }
+
+      const sub = $("sa-lead-submit");
+      if (sub) sub.onclick = submitLead;
+      renewTS();
+    } catch(e) {
+      typing.remove();
+      addMsg("Network error — please try again.", "bot");
+      renewTS();
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  // ========================================================================
+  // QUEUE SEND — handles Turnstile token timing
+  // ========================================================================
+
+  function queueSend(msg) {
+    msg = (msg || "").trim();
+    if (!msg) return;
+    if (token()) {
+      doSend(msg);
+    } else {
+      pendingQuestion = msg;
+      addMsg("<span class='sa-typing'>…</span>", "bot");
+      setTimeout(() => {
+        if (pendingQuestion) {
+          const q = pendingQuestion;
+          pendingQuestion = null;
+          if (log.lastChild && log.lastChild.querySelector &&
+              log.lastChild.querySelector('.sa-typing')) {
+            log.lastChild.remove();
+          }
+          doSend(q);
+        }
+      }, 4000);
+    }
+  }
+
+  function sendFromInput() {
+    const msg = (input.value || "").trim();
+    if (!msg) return;
+    input.value = "";
+    queueSend(msg);
+  }
+
+  // ========================================================================
+  // OPEN / CLOSE
+  // ========================================================================
+
+  function openChat() {
+    panel.style.display = "flex";
+    launcher.style.display = "none";
+    teaser.style.display = "none";
+    dot.style.display = "none";
+    renderTS();
+    input.focus();
+    if (!log.childElementCount) {
+      addMsg(
+        "Hi! I'm the Sky Alleys assistant 👋 " +
+        "Ask me about our AI, cloud, or advisory services — " +
+        "or how we deliver outcome-based results.", "bot"
+      );
+    }
+  }
+
+  function openChatWithQuestion(question) {
+    panel.style.display = "flex";
+    launcher.style.display = "none";
+    teaser.style.display = "none";
+    dot.style.display = "none";
+    renderTS();
+    if (!log.childElementCount) {
+      addMsg("Hi! I'm the Sky Alleys assistant 👋", "bot");
+    }
+    if (question) { queueSend(question); }
+    else { input.focus(); }
+  }
+
+  // ========================================================================
+  // WIRE EVENTS
+  // ========================================================================
+  sendBtn.onclick = sendFromInput;
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") sendFromInput();
+  });
+  launcher.onclick = openChat;
+  teaser.onclick = () => openChatWithQuestion(chosenTeaser.ask);
+  teaserClose.onclick = (e) => {
+    e.stopPropagation();
+    teaser.style.display = "none";
+  };
+  closeBtn.onclick = () => {
+    panel.style.display = "none";
+    launcher.style.display = "flex";
+  };
+
+  // ========================================================================
+  // TEASER — Show once per browser session after 4-second delay
+  // ========================================================================
+  if (!sessionStorage.getItem("sa_teaser_shown")) {
+    setTimeout(() => {
+      if (panel.style.display !== "flex") {
+        document.getElementById("sa-teaser-text").innerHTML = chosenTeaser.msg;
+        teaser.style.display = "block";
+        sessionStorage.setItem("sa_teaser_shown", "1");
+      }
+    }, 4000);
+  }
+})();
+</script>
+<!-- ===== End Chat Widget ===== -->
