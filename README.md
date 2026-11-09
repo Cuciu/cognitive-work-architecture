@@ -164,21 +164,21 @@ chmod +x 01-enable-apis.sh 02-create-firestore.sh
 ./02-create-firestore.sh 
 ```
 Step 2 — Prepare Site Content
-```
+```bash
 cd site-sales-agent/sales-agent
 cp site_content_template.txt site_content_full.txt
 ```
 Edit site_content_full.txt with your services, proof points, etc.
 
 Step 3 — Create the Context Cache
-```
+```bash
 export GCP_PROJECT=your-project-id
 python cache_setup.py
 ```
 
 Step 4 — Deploy Cloud Functions
 Sales agent:
-```
+```bash
 cd site-sales-agent/sales-agent
 gcloud functions deploy sales-agent \
   --gen2 --runtime=python311 --trigger-http \
@@ -187,7 +187,7 @@ gcloud functions deploy sales-agent \
   --entry-point=sales_agent
 ```
 Lead capture:
-```
+```bash
 cd ../capture-lead
 gcloud functions deploy capture-lead \
   --gen2 --runtime=python311 --trigger-http \
@@ -195,21 +195,21 @@ gcloud functions deploy capture-lead \
   --entry-point=capture_lead
 ```
 Cache refresh (scheduled):
-```
+```bash
 cd ../refresh-cache
 gcloud functions deploy refresh-cache \
   --gen2 --runtime=python311 --trigger-topic=refresh-cache \
   --entry-point=create_site_cache
 ```
 Budget monitor (scheduled):
-```
+```bash
 cd ../monitor-budget
 gcloud functions deploy monitor-budget \
   --gen2 --runtime=python311 --trigger-topic=monitor-budget \
   --entry-point=monitor_budget
 ```
 Budget reset (scheduled):
-```
+```bash
 cd ../reset-budget
 gcloud functions deploy reset-budget \
   --gen2 --runtime=python311 --trigger-topic=reset-budget \
@@ -217,19 +217,19 @@ gcloud functions deploy reset-budget \
 ```
 Step 5 — Set Up Schedules
 Cache refresh — daily at 2am UTC:
-```
+```bash
 gcloud scheduler jobs create pubsub refresh-cache-daily \
   --schedule="0 2 * * *" --topic=refresh-cache \
   --message-body="{}"
 ```
 Budget monitor — every 4 hours:
-```
+```bash
 gcloud scheduler jobs create pubsub monitor-budget-4h \
   --schedule="0 */4 * * *" --topic=monitor-budget \
   --message-body="{}"
 ```
 Budget reset — 1st of each month at midnight UTC:
-```
+```bash
 gcloud scheduler jobs create pubsub reset-budget-monthly \
   --schedule="0 0 1 * *" --topic=reset-budget \
   --message-body="{}"
