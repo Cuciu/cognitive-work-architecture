@@ -1,1 +1,17 @@
+# Site Content Template
+# =====================
+# Replace this file with your actual site content and rename to:
+#   site_content_full.txt
+#
+# This file is loaded by the cache refresh function and serves as
+# the agent's knowledge base. Include:
+#   - Service descriptions
+#   - Pricing tiers (if public)
+#   - Case studies / proof points
+#   - Technical capabilities
+#   - FAQs
+#
+# The agent will ONLY answer from this content. Anything not here
+# does not exist as far as the agent is concerned.
 
+[Your site content here]
