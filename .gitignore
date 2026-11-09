@@ -1,0 +1,6 @@
+# Secrets — never commit
+.env
+*.env
+
+# Proprietary content — runtime only
+site_content_full.txt
