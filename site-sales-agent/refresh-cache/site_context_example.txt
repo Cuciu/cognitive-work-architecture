@@ -1,0 +1,522 @@
+===========================================================================
+# Cognitive Work Architecture — Site Sales Agent — Content Template
+# ===========================================================================
+#
+# PURPOSE:
+# This file is the agent's ENTIRE knowledge base. The agent will ONLY
+# answer from content in this file. Anything not documented here does
+# not exist as far as the agent is concerned.
+#
+# ARCHITECTURE NOTE:
+# This content is loaded into a Gemini context cache (see refresh-cache/)
+# with a 25-hour TTL. The cache reduces per-request token costs by ~75%.
+# Without caching, this ~8,000-token document is sent with every single
+# request at full input token pricing.
+#
+# STRUCTURE GUIDE:
+# The content is organized for both human readability AND model retrieval:
+#
+#   1. Company Overview         → Agent identity and positioning
+#   2. Persona Routing Matrix   → Maps buyer types to entry engagements
+#   3. Detailed Offerings       → Deep service descriptions with proof points
+#   4. Commercial Models        → Pricing, fee structures, engagement models
+#   5. Competitive Positioning  → How to position against alternatives
+#   6. Objection Handling       → Persona-mapped rebuttal scripts
+#   7. Proof Points             → Verified operational benchmarks
+#   8. Expansion Paths          → Post-engagement upsell ladders
+#   9. Disqualification Rules   → Walk-away signals
+#
+# WHY THIS ORDER MATTERS:
+# The model processes this content sequentially. Company overview and
+# persona routing appear first because they frame every subsequent answer.
+# Proof points and benchmarks are interspersed throughout (not siloed at
+# the end) so the model naturally cites them when discussing services.
+#
+# MAINTENANCE:
+# Update this file whenever your website content changes, then run
+# cache_setup.py (manual) or wait for the next scheduled refresh-cache
+# execution. The agent will serve stale content until the cache refreshes.
+# ===========================================================================
+
+
+Sky Alleys operates a dual-engine commercial model combining Business
+Development as a Service (BDaaS) with Expert-Led Delivery, underpinned
+by a Board & Executive Advisory Practice that generates decision-grade
+evidence for enterprise technology spend. Sky Alleys does not sell effort
+or strategy decks—it delivers evidence-based, outcome-funded engagements
+designed to eliminate structural misalignments in traditional enterprise
+IT consulting.
+
+   ┌─────────────────────────────────────────────────┐
+   │          EXPERT NETWORK (80/10/10)               │
+   │   Senior practitioners → contribution-based      │
+   │   No pyramid │ No leverage │ No scarcity         │
+   └─────────┬─────────────────────┬─────────────────┘
+             │                     │
+    ┌────────▼────────┐   ┌───────▼─────────────┐
+    │  BDaaS ENGINE   │   │  ADVISORY PRACTICE  │
+    │  Win + Shape    │   │  Decision Dossier   │
+    │  Opportunities  │   │  Cloud/AI Exposure  │
+    │                 │   │  Vendor Power Reset │
+    └────────┬────────┘   │  Coaching           │
+             │            └───────┬─────────────┘
+             │                    │
+    ┌────────▼────────────────────▼──────────────┐
+    │        EXPERT-LED DELIVERY                  │
+    │  Outcome-Funded │ Co-Invested │ Accountable │
+    └────────┬────────────────────────────────────┘
+             │
+    ┌────────▼────────────────────────────────────┐
+    │        RESILIENCE POOL + GROWTH FUND        │
+    │  Smooth volatility │ Fund expansion │ Scale │
+    └─────────────────────────────────────────────┘
+
+
+# ===========================================================================
+# PERSONA ROUTING — Maps buyer types to entry engagements
+# ===========================================================================
+# AGENT NOTE: This matrix drives conversation routing. When a visitor
+# reveals their role or pain point, use this to match them to the
+# right entry engagement. Do not suggest services outside their persona.
+# ===========================================================================
+
+Persona Routing & Sales Positioning Matrix
+
+Buyer Persona  Primary Entry Engagement  Escalation Path  Key Buying Trigger
+
+RED (CFO / Controller)
+  Decision Dossier (10-day pre-board gate)
+  → Cloud & AI Program Exposure (if program already in-flight)
+  Immediate ROI clarity, commitment risk mitigation, vendor sanity check
+
+YELLOW (CIO / Visionary)
+  Cloud & AI Program Exposure (3-week health check)
+  → Executive & Technical Coaching (team enablement at scale)
+  Program health defense, value verification, operating model modernization
+
+GREEN (Procurement / Ops)
+  Vendor Power Reset (forensic contract-to-delivery)
+  → Decision Dossier (for upcoming approval cycle)
+  Cost escalation, change request leakage, vendor owning narrative
+
+BLUE (Audit / Risk)
+  Cloud & AI Program Exposure (evidence-based assurance)
+  → Vendor Power Reset (if vendor governance is root cause)
+  Regulatory risk, unmonitored AI pilots, escalation of audit findings
+
+
+# ===========================================================================
+# DETAILED OFFERINGS
+# ===========================================================================
+
+Pillar 1: Board & Executive Advisory Practice (Decision-Grade Gates)
+
+1. Decision Dossier — Pre-Board Gate
+Format & Timebox: 10 business days | Single senior operator |
+1 executive deliverable package.
+
+Problem Solved: Major technology initiative heading to the board;
+business case polished, vendor optimistic, but key risks and missing
+costs remain unvoiced.
+
+Target Buyers: CFOs, Investment Committees, CIOs presenting business
+cases, Corporate Strategy teams.
+
+Decision Domains: Cloud consolidation, Data Center exits, SAP/ERP
+modernization, Security platform investments, AI platforms & data
+foundations, major vendor renewals.
+
+Deliverables:
+  Decision Dossier (6–8 pages): Single executive narrative with one
+  board recommendation backed by evidence.
+  Risk Register (Board Version): Top unvarnished risks, mitigations,
+  and ownership.
+  Architecture & Operating Model Implications: Second-order impacts
+  on governance, operations, and security.
+  Commercial Sanity Check: Uncovered missing costs, unsafe assumptions,
+  and required vendor conditions.
+
+Execution Timeline: Days 1–3 (Review & Discovery) → Days 4–7
+(Triangulate & Challenge) → Days 8–10 (Deliver Dossier & Executive
+Briefing).
+
+Financial Benchmarks: Up to 30% reduction in cloud run-rate within
+6 months; 20% reduction in TCO.
+
+
+2. Cloud & AI Program Exposure — Board Reality Check
+Format & Timebox: 3 weeks | 3 execution phases | 1 independent
+audit-grade view.
+
+Problem Solved: Escalating cloud spend and uncoordinated AI pilots
+where the board lacks clarity on whether spend generates real value
+or funds vendor momentum.
+
+Target Buyers: Boards of Directors, Audit & Risk Committees, CIOs, CFOs.
+
+Deliverables:
+  Board Brief (10–12 slides): Plain-language executive presentation
+  for non-technical board members.
+  Exposure Map: Top 10 failure modes across cost, security, delivery,
+  compliance, and operating model.
+  Decision Tree: Structured Continue / Stop / Rescope framework with
+  enforceable prerequisites.
+  90-Day Stabilization Plan: Actionable roadmap to restore governance
+  and reduce audit exposure.
+
+Execution Timeline: Week 1 (Stakeholder Interviews & Doc Review) →
+Week 2 (Triangulation & Gap Analysis) → Week 3 (Board-Ready
+Synthesis & Q&A).
+
+
+3. Vendor Power Reset — Contract-to-Delivery Forensics
+Format & Timebox: 2–4 weeks | Forensic-grade evidence gathering.
+
+Problem Solved: Vendor owns the delivery narrative; constant change
+requests and cost escalation without clear, delivered outcomes.
+
+Target Buyers: CIOs, Heads of Infrastructure/Cloud, Procurement Leaders.
+
+Deliverables:
+  Contract-to-Delivery Traceability Map: Line-by-line trace contrasting
+  contract promises, actual delivery, and invoicing.
+  Ambiguity Kill List: Specific contract clauses and process gaps
+  causing financial leakage.
+  Governance Reset Pack: Re-established RACI, decision rights, change
+  control, and acceptance criteria.
+  Negotiation Brief: Strategic playbook outlining specific customer
+  leverage points prior to renewal.
+
+Financial Impact Targets: 30% Commercial Recovery; 80% Change Request
+Suppression; 60% Delivery Risk Mitigation; 90% Timeline Alignment.
+
+
+4. Executive & Technical Coaching
+Format: Ongoing | Embedded directly in active programs | Outcome-funded.
+
+Coaching Tracks: Enterprise Sales Coaching, Business Development
+Coaching, Leader Uplift in Real Programs.
+
+Engagement Models: Outcome-Funded Advisory, Co-Invested Initiatives,
+Executive-Level Stewardship.
+
+90-Day Onboarding Structure: Weeks 1–2 (Alignment Workshop) →
+Weeks 2–8 (In-Flight Coaching) → Weeks 4–10 (Governance Uplift) →
+Weeks 10–12 (Value Review & Next Wave).
+
+
+# ===========================================================================
+# COGNITIVE WORK ARCHITECTURE (CWA) — AI Agent Platform
+# ===========================================================================
+
+Pillar 2: Enterprise Operational AI (Cognitive Work Architecture)
+
+Sky Alleys structures AI deployments around the Cognitive Work
+Architecture (CWA)—a multi-agent AI operating model using specialized
+agents to function as a virtual workforce.
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                        CWA STRUCTURAL INVERSION                        │
+├────────────────────────────────────────────────────────────────────────┤
+│ Traditional TOM:  Strategy → Structure → Roles → Processes → Tech      │
+│ CWA Operating:    Strategy → Outcomes → Cognitive Capabilities →       │
+│                   Enforceable Governance Boundaries → Adaptive Execution│
+└────────────────────────────────────────────────────────────────────────┘
+
+
+1. AI Agents for Your Team
+Deployment Velocity: Go-live in 2–4 weeks via configuration
+(Copilot Studio, Power Automate, Dataverse)—zero custom code.
+
+Business Impact: Recovers 12–15 hours/week per employee; target
+20–30% operational cost reduction in Year 1.
+
+8 Practical Agent Modules:
+
+  Customer Support Agent
+    Handles routine inquiries via chat/email; contextual escalation.
+    Resolves 50-60% of inquiries; 35%+ faster response time.
+
+  Executive Assistant (Lia)
+    Calendar, meeting briefs, action item synthesis, cross-agent
+    orchestration. Recovers 8–12 hours/week per leader.
+
+  Procurement & Vendor Agent
+    PO tracking, quote comparison, invoice anomaly flagging.
+    Reduces processing time from 12–15 min to <2 min per PO.
+
+  Invoice & Payment Agent
+    Automated invoice matching, PO validation, discrepancy detection.
+    70–80% efficiency improvement.
+
+  Project Management Agent (Andre)
+    Milestones tracking, status report generation, risk warnings.
+    Integrates with Planner, DevOps, Jira.
+
+  Email Management Agent
+    Inbox prioritization, contextual drafting, follow-up automation.
+    Learns executive communication style.
+
+  Monitoring & Alerts Agent (Mara)
+    24/7 infrastructure alert triage, correlation, Sev level filtering.
+    40–60% alert noise reduction.
+
+  Reporting & Insights Agent
+    Multi-source summary generation, anomaly flagging.
+    Eliminates manual synthesis effort.
+
+Budget Protection Modes: Integrated standard on all agents:
+  Stay in Budget: Hard cap; switches to graceful fallback at cap;
+  alerts sent at 80% and 100% threshold.
+  Keep Running: Transparent per-interaction pricing beyond cap
+  with a hard safety ceiling.
+
+
+2. AI Governance & FinOps
+Core Philosophy: Cloud cost management and AI governance are built
+into the execution substrate via automated cost circuit breakers
+and kill switches—not policy documents.
+
+Commercial Models:
+  Predictive Budget Model: Fixed monthly AI operating budget;
+  Sky Alleys absorbs consumption variability.
+  Managed Budget Partnership: Real-time dashboards, automated
+  thresholds, intervention at 80%/100%.
+
+Trustworthy AI Framework (7 Pillars): Fair/Unbiased,
+Transparent/Explainable, Robust/Reliable, Privacy (GDPR),
+Safe/Secure, Responsible/Accountable, Regulatory Compliance.
+
+
+3. Industrial AI & Factory-Floor Inference
+Architecture: Edge-first processing, OT-native integration,
+hybrid IT/OT cloud architecture.
+
+Engagement Velocity: Proof of value delivered in 6–8 weeks.
+
+8 Production-Ready Solutions: Visual Quality Inspection, Predictive
+Maintenance, OEE Intelligence, Scrap & Yield Optimization, Safety &
+Compliance Monitoring, Energy Optimization, Workforce & Shift
+Optimization, Field-to-Factory Feedback.
+
+
+4. Multi-Agent AI Orchestration
+Technology Stack: Copilot Studio (Orchestration), Power Automate
+(Workflows), Dataverse (Memory), Work IQ MCP Connectors
+(Enterprise Apps).
+
+Enterprise Scaling Path: Seamless upgrade path from Copilot Studio
+to Azure AI Foundry for vector search, managed identity, and RBAC
+compliance without altering agent logic.
+
+
+5. Air-Gapped / Sovereign AI
+Target Environments: Defense, manufacturing, government, and highly
+regulated industries.
+
+Architecture: Open-source LLMs running locally on Azure Stack Hub
+and edge appliances; infrastructure-layer governance with zero public
+internet dependencies.
+
+
+# ===========================================================================
+# CLOUD & IT TRANSFORMATION
+# ===========================================================================
+
+Pillar 3: Cloud Strategy & IT Transformation Services
+
+Cloud Strategy & Roadmap: TOM design, multi-cloud strategy
+(Azure, AWS, GCP, OCI), maturity assessments.
+
+Cloud Landing Zones & Zero Trust: CAF / Control Tower architecture,
+policy-as-code, Zero Trust micro-segmentation aligned to CISA
+maturity standards.
+
+Data Center Exit & Migration: Proven execution model (277-server /
+118-app exit achieving $1.2M annual savings and 20% TCO reduction).
+
+DevOps & Platform Engineering: CI/CD automation, IaC (Terraform,
+Chef), developer self-service platforms achieving 60% delivery
+acceleration.
+
+Vendor & MSP Governance: SLA governance, MSP oversight, multi-vendor
+program alignment.
+
+
+# ===========================================================================
+# COMMERCIAL MODELS & PRICING
+# ===========================================================================
+
+Business Development as a Service (BDaaS) Fee Structure
+
+All commissions accrue upon contract signature/milestones and are
+disbursed exclusively in proportion to collected customer revenue:
+
+  Introduction-Only: 5–10% GM (~1–3% Rev)
+    Introduced scope only; excludes expansions/renewals.
+
+  Co-Sell: 10–15% GM (~3–5% Rev)
+    Initial deal + expansions within 12 months.
+
+  Full-Cycle BD: 15–25% GM (~5–8% Rev)
+    All Year 1 collected revenue (incl. T&M and change requests).
+
+  Strategic Deals: Tiered 20–30% GM (~6–10% Rev)
+    Year 1 full; renewals at declining tiered rates.
+
+  Account Farming: 5–15% Rev (tiered)
+    Year 1 full; declining rates in Years 2–3.
+
+  Retainer: Monthly Retainer + 5–10% GM
+    All Year 1 revenue from deals closed during retainer window.
+
+
+Expert Network Economics (80 / 10 / 10 Allocation)
+
+   ┌─────────────────────────────────────────────────────────────┐
+   │                80/10/10 FINANCIAL MODEL                     │
+   ├─────────────────────────────────────────────────────────────┤
+   │  80% → Member Commission (Paid upon client receipt)         │
+   │  10% → Network Growth Fund (Marketing, events, expansion)   │
+   │  10% → Resilience Pool (Redistributed to Active Members)    │
+   └─────────────────────────────────────────────────────────────┘
+
+Active Member Eligibility: Good standing (signed charter) AND active
+contribution across Delivery, Business Development, or Network-Building.
+
+Anti-Free-Riding Controls: Observer status for inactive members;
+quarterly documented reviews.
+
+
+# ===========================================================================
+# OPERATIONAL BENCHMARKS & PROOF POINTS
+# ===========================================================================
+
+Cloud Run-Rate Optimization: Reduced $5M Azure budget by 33% in 3 months.
+Infrastructure Cost Reduction: Saved $2M annually for two consecutive
+years in enterprise IT spending.
+Data Center Exit: Exceeded business case by 20%, generating $1.2M in
+annual run-rate savings across 277 servers and 118 applications.
+DevOps Acceleration: Accelerated software delivery cycles by 60%.
+Manufacturing Efficiency: Reduced plant operational costs by 50% via
+global G-local MVPs across 48 locations.
+AI Agent ROI: 12–15 hours/week saved per employee; 40-60% alert noise
+reduction; payback within 4–9 months.
+
+
+# ===========================================================================
+# IMPLEMENTATION FRAMEWORKS
+# ===========================================================================
+
+CWA 5-Step Agent Implementation Blueprint
+  1. Identify: Select a high-frequency human cognitive task.
+  2. Structure Data: Convert raw input into structured Dataverse tables.
+  3. Build Automation: Configure Power Automate triggers and agent calls.
+  4. Execute Agent Logic: Domain-tuned agent executes triage and drafting.
+  5. Human Verification: Human approves or acts on synthesized output.
+
+Manufacturing AI 7 Fundability Gates
+  1. Measurable Operational Constraint
+  2. Baseline & Timebox
+  3. Decision-Grade Visibility
+  4. Enforceable Action Boundaries
+  5. Named Accountable Owner
+  6. Multi-Site Scalability
+  7. Real-World Payback
+
+
+# ===========================================================================
+# COMPETITIVE POSITIONING
+# ===========================================================================
+
+Dimension: Cost & Fee Structure
+  Big 4/MBB: High fixed overheads; billable-hour models.
+  Boutiques: Lower rates; standard T&M.
+  Sky Alleys: Outcome-Funded & Co-Invested. Fixed-scope gates.
+
+Dimension: Delivery Speed
+  Big 4/MBB: 8–16 week assessment cycles.
+  Boutiques: 4–8 weeks.
+  Sky Alleys: 10-day Dossiers; 3-week Health Checks; 2–4 week agent go-lives.
+
+Dimension: Accountability & Talent
+  Big 4/MBB: Leverage Pyramid (seniors sell, juniors deliver).
+  Boutiques: Variable senior oversight.
+  Sky Alleys: Senior-Only Delivery. 100% led by 20+ year operators.
+
+
+# ===========================================================================
+# OBJECTION HANDLING
+# ===========================================================================
+
+"You're too small compared to global consultancies."
+  → RED persona: Senior operators who have run $5M+ cloud budgets
+    buy-side. Board-grade decision gate in 10 days at a fraction
+    of the commitment.
+
+"Is this scalable across global operations?"
+  → YELLOW persona: Governed frameworks and CWA built on your
+    existing M365/Azure Stack. Enterprise scale without headcount
+    expansion.
+
+"What about single-person dependency?"
+  → BLUE persona: 80/10/10 expert network under auditable charter.
+    Governance embedded in infrastructure, not locked in a
+    consultant's head.
+
+"We already have an MSP/vendor managing this."
+  → GREEN persona: We don't replace your MSP; we reset governance.
+    80% change request suppression; 30% commercial recovery.
+
+"AI is moving too fast; we should wait."
+  → YELLOW/BLUE: 2–4 week deployments include automated budget
+    circuit breakers from day one. Production experience with
+    zero financial risk.
+
+
+# ===========================================================================
+# DEAL DISQUALIFICATION — Walk-Away Signals
+# ===========================================================================
+# AGENT NOTE: If any of these signals appear, do NOT push for a booking.
+# Instead, acknowledge the gap and suggest what would need to change
+# before an engagement makes sense.
+# ===========================================================================
+
+Disqualify if:
+  - No Executive Sponsor with budget authorization
+  - "Evaluation Only" with no decision timebox within 60 days
+  - Refusal to share baseline metrics
+  - Unrealistic custom development demands (CWA solves it cleaner)
+  - No decision-maker access during discovery
+
+
+# ===========================================================================
+# AI AGENT PRICING ANCHORS
+# ===========================================================================
+
+Single AI Agent Module: 2–4 weeks. Entry tier starting from low
+fixed-project fee per agent. Includes Budget Protection.
+
+Full Cognitive Workforce (CWA): 5–9 weeks. Fixed-scope package
+covering 4–8 domain agents.
+
+AI Governance & FinOps: 5–8 weeks. Fixed monthly fee or Managed
+Partnership.
+
+Industrial AI / Edge: 6–8 weeks PoV. Outcome-funded proof-of-value.
+
+
+# ===========================================================================
+# ADVISORY EXPANSION PATH
+# ===========================================================================
+
+  1. ENTRY GATE:
+     Decision Dossier (10 Days) / Exposure Review (3 Weeks)
+           │
+           ▼
+  2. IMMEDIATE STABILIZATION:
+     90-Day Governance Reset / Vendor Reset
+           │
+           ▼
+  3. RECURRING CAPABILITY:
+     Quarterly Board Reviews & Retainer Conversion
