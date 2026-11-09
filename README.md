@@ -142,72 +142,102 @@ Self-contained HTML+CSS+JS chat widget. Zero dependencies, no build step. Paste 
 - Lead capture form at session end
 - WordPress-compatible (`!important` positioning, max z-index)
 ---
+
+---
+
 ## Getting Started
+
 ### Prerequisites
+
 - Google Cloud Platform account with billing enabled
 - [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and authenticated
 - Cloudflare account with Turnstile configured (free tier works)
 - Python 3.11+
+
+---
 ### Step 1 — Enable APIs and Create Firestore
 ```bash
 export GCP_PROJECT=your-project-id
 cd site-sales-agent/scripts
 chmod +x 01-enable-apis.sh 02-create-firestore.sh
 ./01-enable-apis.sh
-./02-create-firestore.sh
+./02-create-firestore.sh 
+```
 Step 2 — Prepare Site Content
+```
 cd site-sales-agent/sales-agent
-# Copy the template and replace with your own content
 cp site_content_template.txt site_content_full.txt
-# Edit site_content_full.txt with your services, proof points, etc.
+```
+Edit site_content_full.txt with your services, proof points, etc.
+
 Step 3 — Create the Context Cache
+```
 export GCP_PROJECT=your-project-id
 python cache_setup.py
+```
+
 Step 4 — Deploy Cloud Functions
-# Sales agent
+Sales agent:
+```
 cd site-sales-agent/sales-agent
 gcloud functions deploy sales-agent \
   --gen2 --runtime=python311 --trigger-http \
   --allow-unauthenticated \
   --set-env-vars="GCP_PROJECT=$GCP_PROJECT,CONSULTATION_URL=https://your-booking-url" \
   --entry-point=sales_agent
-# Lead capture
+```
+Lead capture:
+```
 cd ../capture-lead
 gcloud functions deploy capture-lead \
   --gen2 --runtime=python311 --trigger-http \
   --allow-unauthenticated \
   --entry-point=capture_lead
-# Cache refresh (scheduled)
+```
+Cache refresh (scheduled):
+```
 cd ../refresh-cache
 gcloud functions deploy refresh-cache \
   --gen2 --runtime=python311 --trigger-topic=refresh-cache \
   --entry-point=create_site_cache
-# Budget monitor (scheduled)
+```
+Budget monitor (scheduled):
+```
 cd ../monitor-budget
 gcloud functions deploy monitor-budget \
   --gen2 --runtime=python311 --trigger-topic=monitor-budget \
   --entry-point=monitor_budget
-# Budget reset (scheduled)
+```
+Budget reset (scheduled):
+```
 cd ../reset-budget
 gcloud functions deploy reset-budget \
   --gen2 --runtime=python311 --trigger-topic=reset-budget \
   --entry-point=reset_budget
+```
 Step 5 — Set Up Schedules
-# Cache refresh — daily at 2am UTC
+Cache refresh — daily at 2am UTC:
+```
 gcloud scheduler jobs create pubsub refresh-cache-daily \
   --schedule="0 2 * * *" --topic=refresh-cache \
   --message-body="{}"
-# Budget monitor — every 4 hours
+```
+Budget monitor — every 4 hours:
+```
 gcloud scheduler jobs create pubsub monitor-budget-4h \
   --schedule="0 */4 * * *" --topic=monitor-budget \
   --message-body="{}"
-# Budget reset — 1st of each month at midnight UTC
+```
+Budget reset — 1st of each month at midnight UTC:
+```
 gcloud scheduler jobs create pubsub reset-budget-monthly \
   --schedule="0 0 1 * *" --topic=reset-budget \
   --message-body="{}"
+```
 Step 6 — Deploy the Widget
 Update AGENT_URL, LEAD_URL, and SITE_KEY in widget/widget.html
 Paste the contents of widget.html before </body> on your site
+
 System Prompt Architecture
 The agent uses a 4-state conversation machine with explicit transition rules, forbidden transitions, and behavioral constraints. Key design choices:
 "Answer ONLY from provided content" — prevents hallucinated capabilities
