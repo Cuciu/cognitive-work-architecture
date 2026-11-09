@@ -1,0 +1,18 @@
+# Site Content — Template & Example
+# ==================================
+# This file serves as both the template structure AND a working
+# production example (Sky Alleys site content).
+#
+# To use with your own agent:
+#   1. Replace the content below with your own site content
+#   2. Rename this file to: site_content_full.txt
+#   3. Run cache_setup.py to create the context cache
+#
+# site_content_full.txt is gitignored — your content stays private.
+#
+# The agent will ONLY answer from this content. Anything not here
+# does not exist as far as the agent is concerned.
+# ==================================
+
+Sky Alleys operates a dual-engine commercial model...
+[rest of your content]
