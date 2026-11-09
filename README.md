@@ -7,139 +7,149 @@ This repo contains the first published agent: the **Site Sales Agent**, a conver
 ---
 ## Architecture Overview
 ### Budget Governance Lifecycle
-```mermaid
-graph LR
-    A[TRACK<br/>per request<br/>main.py] --> B[MONITOR<br/>every 4h<br/>monitor-budget]
-    B --> C[ENFORCE<br/>auto-degrade<br/>sales-agent]
-    C --> D[RESET<br/>monthly<br/>reset-budget]
-    D --> A
-Budget Thresholds
-Spend Range	Tier	Behavior
-$0 — $8	✅ Full	All model calls active
-$8 — $10	⚠️ Warning	Alert fired (once), ops notified
-$10 — $12	🛑 Degraded	Model calls stop, fallback CTA served
-> $12	🚫 Hard Ceiling	Absolute stop, no exceptions
-5-Layer Output Guardrail Pipeline
-graph TD A[Model Output] --> B[smart_truncate<br/>sentence-boundary cap] B --> C[strip_premature_cta_language<br/>remove early booking language] C --> D[extract BOOK_CTA marker<br/>signal retained / text cleaned] D --> E[strip_urls<br/>remove any leaked URLs] E --> F[CTA gate check<br/>turn count >= minimum?] F --> G[Clean Response]
-Cost Optimization
-Path	Rate	When
-Cached input	$0.15 / 1M tokens	Context cache active (normal)
-Non-cached input	$1.50 / 1M tokens	Cache expired or missing (10x more expensive)
-Output	$7.50 / 1M tokens	Always
+**Track** (per request, `main.py`) → **Monitor** (every 4h, `monitor-budget`) → **Enforce** (auto-degrade, `sales-agent`) → **Reset** (monthly, `reset-budget`) → _new month starts_ → **Track** …
+### Budget Thresholds
+| Spend Range | Tier | Behavior |
+|-------------|------|----------|
+| $0 — $8 | ✅ **Full** | All model calls active |
+| $8 — $10 | ⚠️ **Warning** | Alert fired (once), ops notified |
+| $10 — $12 | 🛑 **Degraded** | Model calls stop, fallback CTA served |
+| > $12 | 🚫 **Hard Ceiling** | Absolute stop, no exceptions |
+### 5-Layer Output Guardrail Pipeline
+Every model response passes through five processing layers before reaching the visitor:
+1. **`smart_truncate()`** — Cap at 700 chars, cut at sentence boundary
+2. **`strip_premature_cta_language()`** — Regex-remove booking language before turn 3
+3. **Extract `[BOOK_CTA]` marker** — Signal retained for CTA logic, marker removed from display text
+4. **`strip_urls()`** — Remove any URLs the model leaked (model is told not to; code enforces it)
+5. **CTA gate check** — Booking button only renders if `turn_count >= MIN_TURNS_BEFORE_CTA`
+### Cost Optimization
+| Path | Rate | When |
+|------|------|------|
+| **Cached input** | $0.15 / 1M tokens | Context cache active (normal) |
+| **Non-cached input** | $1.50 / 1M tokens | Cache expired or missing — **10x more expensive** |
+| **Output** | $7.50 / 1M tokens | Always |
 Cache miss = agent still works, just costs more. Graceful degradation, not failure.
-Design Principles
-🛡️ Guardrails — Defense in Depth
+---
+## Design Principles
+### 🛡️ Guardrails — Defense in Depth
 The system prompt tells the model what to do. Code enforces it.
-Layer	What It Does	Why It Exists
-MAX_PROMPTS_PER_SESSION = 6	Hard session cap	A conversation that hasn't converted in 6 turns won't convert in 60
-MAX_ANSWER_CHARS = 700	Character limit with smart truncation	Prevents wall-of-text responses in a small chat window
-MAX_OUTPUT_TOKENS = 250	Model-level output cap	Defense in depth — even if truncation fails
-MAX_HISTORY_TURNS = 10	Conversation window cap	Bounds token costs as conversations grow
-MIN_TURNS_BEFORE_CTA = 3	Booking CTA turn gate	Code-level override — model cannot push meetings early
-strip_urls()	Removes any URLs from model output	Model is told not to output URLs; this enforces it
-strip_premature_cta_language()	Regex removal of booking language	Catches "Shall we schedule..." before the turn gate
-💰 Budget Governance — Per-Token Cost Tracking
-Most agent builders discover they've overspent when the invoice arrives. This agent tracks cost per request and enforces monthly budgets with three escalation tiers.
-Key implementation details:
-Cached vs. non-cached token rates tracked separately
-Firestore atomic increments prevent race conditions on spend accumulation
-Auto-recovery: if budget headroom returns (manual increase or new month), the tier automatically restores to "Full" — no human intervention required
-Alert deduplication: threshold alerts fire once, not every 4 hours
-🔒 Security
-Measure	Implementation
-Bot protection	Cloudflare Turnstile verification on every request
-CORS	Configurable origin, explicit method/header allowlist
-Secrets	All credentials via environment variables, never in source
-Error handling	Stack traces truncated — never exposed to clients
-Input validation	Email regex, .strip() sanitization, silent JSON parsing
-URL stripping	Model output scrubbed of any leaked URLs
-XSS prevention	escapeHtml() on all user input before rendering
-⚡ Why This Approach
-Decision	Alternative	Why This Is Better
-Context caching (25hr TTL)	Send site content every request	10x cheaper at scale
-flash-lite model	Larger models	Sufficient quality for sales conversations at fraction of cost
-Stateless server (history from client)	Server-side session storage	No PII stored server-side; client controls context
-4-state conversation machine	Stateless chatbot	Conversations that feel like a senior advisor, not a FAQ bot
-Code-level output pipeline	Prompt-only instructions	Models don't always follow prompts; code always executes
-Graceful degradation	Hard error on budget/failure	Visitors always see a professional response, never an error page
-Fire-and-forget CRM webhook	Synchronous CRM integration	CRM failure never blocks lead capture
-Repository Structure
-cognitive-work-architecture/
-├── .gitignore
-├── LICENSE                              MIT
-├── README.md                            This file
-│
-└── site-sales-agent/                    First published agent
+| Layer | What It Does | Why It Exists |
+|-------|-------------|---------------|
+| `MAX_PROMPTS_PER_SESSION = 6` | Hard session cap | A conversation that hasn't converted in 6 turns won't convert in 60 |
+| `MAX_ANSWER_CHARS = 700` | Character limit with smart truncation | Prevents wall-of-text responses in a small chat window |
+| `MAX_OUTPUT_TOKENS = 250` | Model-level output cap | Defense in depth — even if truncation fails |
+| `MAX_HISTORY_TURNS = 10` | Conversation window cap | Bounds token costs as conversations grow |
+| `MIN_TURNS_BEFORE_CTA = 3` | Booking CTA turn gate | Code-level override — model cannot push meetings early |
+| `strip_urls()` | Removes any URLs from model output | Model is told not to output URLs; this enforces it |
+| `strip_premature_cta_language()` | Regex removal of booking language | Catches "Shall we schedule..." before the turn gate |
+### 💰 Budget Governance — Per-Token Cost Tracking
+Most agent builders discover they've overspent when the invoice arrives. This agent tracks cost **per request** and enforces monthly budgets with three escalation tiers.
+- **Cached vs. non-cached token rates** tracked separately
+- **Firestore atomic increments** prevent race conditions on spend accumulation
+- **Auto-recovery**: if budget headroom returns (manual increase or new month), the tier automatically restores to "Full" — no human intervention required
+- **Alert deduplication**: threshold alerts fire once, not every 4 hours
+### 🔒 Security
+| Measure | Implementation |
+|---------|---------------|
+| Bot protection | Cloudflare Turnstile verification on every request |
+| CORS | Configurable origin, explicit method/header allowlist |
+| Secrets | All credentials via environment variables, never in source |
+| Error handling | Stack traces truncated — never exposed to clients |
+| Input validation | Email regex, `.strip()` sanitization, silent JSON parsing |
+| URL stripping | Model output scrubbed of any leaked URLs |
+| XSS prevention | `escapeHtml()` on all user input before rendering |
+### ⚡ Why This Approach
+| Decision | Alternative | Why This Is Better |
+|----------|------------|-------------------|
+| Context caching (25hr TTL) | Send site content every request | 10x cheaper at scale |
+| `flash-lite` model | Larger models | Sufficient quality at fraction of cost |
+| Stateless server | Server-side session storage | No PII stored server-side |
+| 4-state conversation machine | Stateless chatbot | Feels like a senior advisor, not a FAQ bot |
+| Code-level output pipeline | Prompt-only instructions | Models don't always follow prompts; code always executes |
+| Graceful degradation | Hard error on budget/failure | Visitors always see a professional response |
+| Fire-and-forget CRM webhook | Synchronous CRM integration | CRM failure never blocks lead capture |
+---
+## Repository Structure
+    cognitive-work-architecture/
+    ├── .gitignore
+    ├── LICENSE                              MIT
+    ├── README.md                            This file
     │
-    ├── site_content_template.txt        Agent knowledge base (template + example)
-    │
-    ├── scripts/
-    │   ├── 01-enable-apis.sh            Enable required GCP APIs
-    │   └── 02-create-firestore.sh       Create Firestore database
-    │
-    ├── capture-lead/
-    │   ├── main.py                      Lead capture Cloud Function
-    │   ├── requirements.txt
-    │   └── .env.example
-    │
-    ├── refresh-cache/
-    │   ├── main.py                      Scheduled context cache refresh
-    │   ├── requirements.txt
-    │   ├── .env.example
-    │   └── .gitignore
-    │
-    ├── sales-agent/
-    │   ├── main.py                      Core conversational agent
-    │   ├── cache_setup.py               CLI cache creation (manual/debug)
-    │   ├── requirements.txt
-    │   ├── .env.example
-    │   ├── .gitignore
-    │   └── site_content_template.txt    Agent knowledge base
-    │
-    ├── monitor-budget/
-    │   ├── main.py                      Budget threshold monitor (every 4h)
-    │   ├── requirements.txt
-    │   └── .env.example
-    │
-    ├── reset-budget/
-    │   ├── main.py                      Monthly budget reset
-    │   ├── requirements.txt
-    │   └── .env.example
-    │
-    └── widget/
-        └── widget.html                  Self-contained chat widget (HTML+CSS+JS)
-Module Reference
-capture-lead/ — Lead Capture
+    └── site-sales-agent/                    First published agent
+        │
+        ├── site_content_template.txt        Agent knowledge base (template + example)
+        │
+        ├── scripts/
+        │   ├── 01-enable-apis.sh            Enable required GCP APIs
+        │   └── 02-create-firestore.sh       Create Firestore database
+        │
+        ├── capture-lead/
+        │   ├── main.py                      Lead capture Cloud Function
+        │   ├── requirements.txt
+        │   └── .env.example
+        │
+        ├── refresh-cache/
+        │   ├── main.py                      Scheduled context cache refresh
+        │   ├── requirements.txt
+        │   ├── .env.example
+        │   └── .gitignore
+        │
+        ├── sales-agent/
+        │   ├── main.py                      Core conversational agent
+        │   ├── cache_setup.py               CLI cache creation (manual/debug)
+        │   ├── requirements.txt
+        │   ├── .env.example
+        │   ├── .gitignore
+        │   └── site_content_template.txt    Agent knowledge base
+        │
+        ├── monitor-budget/
+        │   ├── main.py                      Budget threshold monitor (every 4h)
+        │   ├── requirements.txt
+        │   └── .env.example
+        │
+        ├── reset-budget/
+        │   ├── main.py                      Monthly budget reset
+        │   ├── requirements.txt
+        │   └── .env.example
+        │
+        └── widget/
+            └── widget.html                  Self-contained chat widget (HTML+CSS+JS)
+---
+## Module Reference
+### capture-lead/ — Lead Capture
 Serverless endpoint that captures inbound leads with email validation, Turnstile bot protection, Firestore persistence, and optional CRM webhook forwarding. Links leads back to agent sessions for attribution.
-refresh-cache/ — Context Cache Refresh
+### refresh-cache/ — Context Cache Refresh
 Scheduled Cloud Function that creates a Gemini context cache from site content. The cache reduces input token costs by ~75%. Runs on a schedule with a 25-hour TTL. Stores the cache name in Firestore so the agent picks it up at runtime without redeployment.
-sales-agent/ — Core Agent
-The conversational engine. Processes one turn per request with a 5-layer output guardrail pipeline, per-request cost tracking, and cache-first inference with inline fallback. Includes cache_setup.py for manual cache creation during initial deployment or debugging.
-Conversation State Machine:
-State	Name	Behavior
-1	Discovery	Ask one question. Enter once, never return.
-2	Acknowledge	Validate their challenge. One sentence.
-3	Solution	Match problem to capability. Primary operating state.
-4	Intent	Booking CTA. Only on explicit buying signals. Minimum 2 substantive exchanges required.
-monitor-budget/ — Budget Monitor
+### sales-agent/ — Core Agent
+The conversational engine. Processes one turn per request with a 5-layer output guardrail pipeline, per-request cost tracking, and cache-first inference with inline fallback. Includes `cache_setup.py` for manual cache creation during initial deployment or debugging.
+**Conversation State Machine:**
+| State | Name | Behavior |
+|-------|------|----------|
+| 1 | **Discovery** | Ask one question. Enter once, never return. |
+| 2 | **Acknowledge** | Validate their challenge. One sentence. |
+| 3 | **Solution** | Match problem to capability. Primary operating state. |
+| 4 | **Intent** | Booking CTA. Only on explicit buying signals. Minimum 2 substantive exchanges required. |
+### monitor-budget/ — Budget Monitor
 Runs every 4 hours via Cloud Scheduler. Checks spend against DegradeThreshold (80%) and MonthlyLimit (100%). Fires deduplicated alerts via webhook (Slack, Teams, PagerDuty). Sets ServiceTier to "Degraded" when budget is exhausted. Auto-recovers when headroom returns.
-reset-budget/ — Monthly Budget Reset
+### reset-budget/ — Monthly Budget Reset
 Runs on the 1st of each month. Resets spend counters and alert flags. Preserves custom budget limits — if you manually adjusted MonthlyLimitUSD mid-month, the reset only clears counters, not config.
-widget/ — Chat Widget
-Self-contained HTML+CSS+JS chat widget. Zero dependencies, no build step. Paste before </body> on any page. Features:
-Rotating teaser bubbles (random engagement hook, shown once per session)
-#chat deep linking (any <a href="#chat"> opens the widget)
-Turnstile bot protection with queue-based send
-Conversation history sent with each request (stateless server)
-Lead capture form at session end
-WordPress-compatible (!important positioning, max z-index)
-Getting Started
-Prerequisites
-Google Cloud Platform account with billing enabled
-gcloud CLI installed and authenticated
-Cloudflare account with Turnstile configured (free tier works)
-Python 3.11+
-Step 1 — Enable APIs and Create Firestore
+### widget/ — Chat Widget
+Self-contained HTML+CSS+JS chat widget. Zero dependencies, no build step. Paste before `</body>` on any page. Features:
+- Rotating teaser bubbles (random engagement hook, shown once per session)
+- `#chat` deep linking (any `<a href="#chat">` opens the widget)
+- Turnstile bot protection with queue-based send
+- Conversation history sent with each request (stateless server)
+- Lead capture form at session end
+- WordPress-compatible (`!important` positioning, max z-index)
+---
+## Getting Started
+### Prerequisites
+- Google Cloud Platform account with billing enabled
+- [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and authenticated
+- Cloudflare account with Turnstile configured (free tier works)
+- Python 3.11+
+### Step 1 — Enable APIs and Create Firestore
+```bash
 export GCP_PROJECT=your-project-id
 cd site-sales-agent/scripts
 chmod +x 01-enable-apis.sh 02-create-firestore.sh
