@@ -4,3 +4,5 @@
 
 # Proprietary content — runtime only
 site_content_full.txt
+
+knowledge/*.md
