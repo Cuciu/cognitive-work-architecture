@@ -1,16 +1,32 @@
-# Cognitive Work Architecture
-Production-grade AI agent framework with built-in budget governance, behavioral guardrails, and security — open source under MIT.
-This repo contains the first published agent: the **Site Sales Agent**, a conversational AI that handles inbound sales conversations on a website with the same rigor you'd expect from a senior enterprise sales advisor.
+# Site Sales Agent
+Production-grade AI sales agent with built-in budget governance, behavioral guardrails, and security — open source under MIT.
+A conversational AI that handles inbound sales conversations on a website with the same rigor you'd expect from a senior enterprise sales advisor.
 > **Prompt = suggestion. Code = law.**
 >
-> Every behavioral rule is enforced in code, not just instructed in prompts. The model might ignore a prompt instruction. It cannot ignore a `strip_premature_cta_language()` function that regex-strips booking language before turn 3.
+> Every behavioral rule is enforced in code, not just instructed in prompts.
+> The model might ignore a prompt instruction. It cannot ignore a
+> `strip_premature_cta_language()` function that regex-strips booking
+> language before turn 3.
 ---
 ## Architecture Overview
+
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │ Widget │───▶│ Sales Agent │───▶│ Vertex AI │───▶│ Firestore │ │ (browser) │ │ (Cloud Fn) │ │ (Gemini) │ │ (state) │ └──────────────┘ └──────┬───────┘ └──────────────┘ └──────────────┘ │ ┌────────────┼────────────┐ ▼ ▼ ▼ ┌──────────┐ ┌──────────┐ ┌──────────┐ │ Capture │ │ Monitor │ │ Reset │ │ Lead │ │ Budget │ │ Budget │ └──────────┘ └──────────┘ └──────────┘
+
+### Per-Topic Caching with Intent Classification
+The agent classifies each visitor's intent on their first message, locks a
+topic flow for the session, and routes to a topic-specific Vertex AI content
+cache. This means:
+- **System prompt** lives in code, injected at call time — never cached
+- **Knowledge base** is split per topic — one cache per service line
+- **Adding a new topic** = add one `.md` file + one `TOPIC_FILES` entry
+- **Cache miss** = agent still works with inline fallback (graceful, not broken)
+
+First message → classify_intent() → lock ActiveFlow on session │ ┌─────────────────────┼─────────────────────┐ ▼ ▼ ▼ Topic A cache Topic B cache GENERAL (KB content) (KB content) (system prompt │ │ + global.md) ▼ ▼ ▼ system_instruction system_instruction system_instruction injected at call injected at call injected at call
+
 ### Budget Governance Lifecycle
-**Track** (per request, `main.py`) → **Monitor** (every 4h, `monitor-budget`) → **Enforce** (auto-degrade, `sales-agent`) → **Reset** (monthly, `reset-budget`) → _new month starts_ → **Track** …
-### Budget Thresholds
+**Track** (per request) → **Monitor** (every 4h) → **Enforce** (auto-degrade) → **Reset** (monthly) → _new month_ → **Track** …
 | Spend Range | Tier | Behavior |
-|-------------|------|----------|
+|---|---|---|
 | $0 — $8 | ✅ **Full** | All model calls active |
 | $8 — $10 | ⚠️ **Warning** | Alert fired (once), ops notified |
 | $10 — $12 | 🛑 **Degraded** | Model calls stop, fallback CTA served |
@@ -19,14 +35,14 @@ This repo contains the first published agent: the **Site Sales Agent**, a conver
 Every model response passes through five processing layers before reaching the visitor:
 1. **`smart_truncate()`** — Cap at 700 chars, cut at sentence boundary
 2. **`strip_premature_cta_language()`** — Regex-remove booking language before turn 3
-3. **Extract `[BOOK_CTA]` marker** — Signal retained for CTA logic, marker removed from display text
+3. **Extract `[BOOK_CTA]` marker** — Signal retained for CTA logic, marker removed from text
 4. **`strip_urls()`** — Remove any URLs the model leaked (model is told not to; code enforces it)
 5. **CTA gate check** — Booking button only renders if `turn_count >= MIN_TURNS_BEFORE_CTA`
 ### Cost Optimization
 | Path | Rate | When |
-|------|------|------|
-| **Cached input** | $0.15 / 1M tokens | Context cache active (normal) |
-| **Non-cached input** | $1.50 / 1M tokens | Cache expired or missing — **10x more expensive** |
+|---|---|---|
+| **Cached input** | $0.15 / 1M tokens | Topic cache active (normal) |
+| **Non-cached input** | $1.50 / 1M tokens | Cache expired or missing — **10× more expensive** |
 | **Output** | $7.50 / 1M tokens | Always |
 Cache miss = agent still works, just costs more. Graceful degradation, not failure.
 ---
@@ -34,7 +50,7 @@ Cache miss = agent still works, just costs more. Graceful degradation, not failu
 ### 🛡️ Guardrails — Defense in Depth
 The system prompt tells the model what to do. Code enforces it.
 | Layer | What It Does | Why It Exists |
-|-------|-------------|---------------|
+|---|---|---|
 | `MAX_PROMPTS_PER_SESSION = 6` | Hard session cap | A conversation that hasn't converted in 6 turns won't convert in 60 |
 | `MAX_ANSWER_CHARS = 700` | Character limit with smart truncation | Prevents wall-of-text responses in a small chat window |
 | `MAX_OUTPUT_TOKENS = 250` | Model-level output cap | Defense in depth — even if truncation fails |
@@ -46,11 +62,11 @@ The system prompt tells the model what to do. Code enforces it.
 Most agent builders discover they've overspent when the invoice arrives. This agent tracks cost **per request** and enforces monthly budgets with three escalation tiers.
 - **Cached vs. non-cached token rates** tracked separately
 - **Firestore atomic increments** prevent race conditions on spend accumulation
-- **Auto-recovery**: if budget headroom returns (manual increase or new month), the tier automatically restores to "Full" — no human intervention required
+- **Auto-recovery**: if budget headroom returns (manual increase or new month), the tier automatically restores to Full — no human intervention required
 - **Alert deduplication**: threshold alerts fire once, not every 4 hours
 ### 🔒 Security
 | Measure | Implementation |
-|---------|---------------|
+|---|---|
 | Bot protection | Cloudflare Turnstile verification on every request |
 | CORS | Configurable origin, explicit method/header allowlist |
 | Secrets | All credentials via environment variables, never in source |
@@ -60,8 +76,10 @@ Most agent builders discover they've overspent when the invoice arrives. This ag
 | XSS prevention | `escapeHtml()` on all user input before rendering |
 ### ⚡ Why This Approach
 | Decision | Alternative | Why This Is Better |
-|----------|------------|-------------------|
-| Context caching (25hr TTL) | Send site content every request | 10x cheaper at scale |
+|---|---|---|
+| Per-topic caching | Single monolithic cache | Smaller caches, higher hit rate, cheaper |
+| Intent classification + flow lock | Stateless topic detection | Consistent experience, no topic drift |
+| System prompt at call time | System prompt in cache | One source of truth, easy to update |
 | `flash-lite` model | Larger models | Sufficient quality at fraction of cost |
 | Stateless server | Server-side session storage | No PII stored server-side |
 | 4-state conversation machine | Stateless chatbot | Feels like a senior advisor, not a FAQ bot |
@@ -70,205 +88,213 @@ Most agent builders discover they've overspent when the invoice arrives. This ag
 | Fire-and-forget CRM webhook | Synchronous CRM integration | CRM failure never blocks lead capture |
 ---
 ## Repository Structure
-    cognitive-work-architecture/
-    ├── .gitignore
-    ├── LICENSE                              MIT
-    ├── README.md                            This file
-    │
-    └── site-sales-agent/                    First published agent
-        │
-        ├── site_content_template.txt        Agent knowledge base (template + example)
-        │
-        ├── scripts/
-        │   ├── 01-enable-apis.sh            Enable required GCP APIs
-        │   └── 02-create-firestore.sh       Create Firestore database
-        │
-        ├── capture-lead/
-        │   ├── main.py                      Lead capture Cloud Function
-        │   ├── requirements.txt
-        │   └── .env.example
-        │
-        ├── refresh-cache/
-        │   ├── main.py                      Scheduled context cache refresh
-        │   ├── requirements.txt
-        │   ├── .env.example
-        │   └── .gitignore
-        │
-        ├── sales-agent/
-        │   ├── main.py                      Core conversational agent
-        │   ├── cache_setup.py               CLI cache creation (manual/debug)
-        │   ├── requirements.txt
-        │   ├── .env.example
-        │   ├── .gitignore
-        │   └── site_content_template.txt    Agent knowledge base
-        │
-        ├── monitor-budget/
-        │   ├── main.py                      Budget threshold monitor (every 4h)
-        │   ├── requirements.txt
-        │   └── .env.example
-        │
-        ├── reset-budget/
-        │   ├── main.py                      Monthly budget reset
-        │   ├── requirements.txt
-        │   └── .env.example
-        │
-        └── widget/
-            └── widget.html                  Self-contained chat widget (HTML+CSS+JS)
+
+skyalleys-sales-agent/ ├── .gitignore ├── LICENSE MIT ├── README.md This file ├── README-cloudshell.txt Quick-start for Cloud Shell │ ├── capture-lead/ │ ├── main.py Lead capture Cloud Function │ └── requirements.txt │ ├── refresh-cache/ │ ├── main.py Scheduled per-topic cache refresh │ ├── requirements.txt │ └── knowledge/ │ ├── README.md Expected file format │ └── example.md Template for KB files │ ├── sales-agent/ │ ├── main.py Core conversational agent │ ├── cache_setup.py CLI cache builder (manual/debug) │ ├── env.yaml.example Environment variable template │ ├── system_prompt.example.md System prompt template │ ├── requirements.txt │ └── knowledge/ │ ├── README.md Expected file format │ └── example.md Template for KB files │ ├── scheduled-jobs/ │ ├── monitor-budget/ │ │ ├── main.py Budget threshold monitor (every 4h) │ │ └── requirements.txt │ └── reset-budget/ │ ├── main.py Monthly budget reset │ └── requirements.txt │ ├── scripts/ │ ├── 01-enable-apis.sh Enable required GCP APIs │ └── 02-create-firestore.sh Create Firestore database │ └── widget/ ├── widget.html Self-contained chat widget (HTML+CSS+JS) └── widget.js Standalone JS (for CSP-restricted sites)
+
+### What's Not in This Repo
+The following files are required at runtime but excluded from source control:
+| File | Purpose | How to Create |
+|---|---|---|
+| `knowledge/*.md` | Per-topic knowledge base content | Populate using `knowledge/example.md` as template |
+| `system_prompt.md` | Agent system prompt and conversation rules | Populate using `system_prompt.example.md` as template |
+| `env.yaml` | Environment variables and secrets | Populate using `env.yaml.example` as template |
 ---
 ## Module Reference
 ### capture-lead/ — Lead Capture
-Serverless endpoint that captures inbound leads with email validation, Turnstile bot protection, Firestore persistence, and optional CRM webhook forwarding. Links leads back to agent sessions for attribution.
-### refresh-cache/ — Context Cache Refresh
-Scheduled Cloud Function that creates a Gemini context cache from site content. The cache reduces input token costs by ~75%. Runs on a schedule with a 25-hour TTL. Stores the cache name in Firestore so the agent picks it up at runtime without redeployment.
+Serverless endpoint that captures inbound leads with email validation, Turnstile
+bot protection, Firestore persistence, and optional CRM webhook forwarding.
+Links leads back to agent sessions for attribution.
+### refresh-cache/ — Per-Topic Cache Refresh
+Scheduled Cloud Function that rebuilds Vertex AI content caches for each topic.
+Each topic gets its own lean cache (KB content only — no system prompt). Writes
+the `CacheMap` to Firestore so the agent picks up new caches at runtime without
+redeployment.
 ### sales-agent/ — Core Agent
-The conversational engine. Processes one turn per request with a 5-layer output guardrail pipeline, per-request cost tracking, and cache-first inference with inline fallback. Includes `cache_setup.py` for manual cache creation during initial deployment or debugging.
+The conversational engine. Classifies visitor intent on first message, locks
+a topic flow for the session, and routes to the appropriate content cache.
+Processes one turn per request with a 5-layer output guardrail pipeline,
+per-request cost tracking, and cache-first inference with inline fallback.
+Includes `cache_setup.py` for manual cache creation during initial deployment
+or debugging.
 **Conversation State Machine:**
 | State | Name | Behavior |
-|-------|------|----------|
+|---|---|---|
 | 1 | **Discovery** | Ask one question. Enter once, never return. |
 | 2 | **Acknowledge** | Validate their challenge. One sentence. |
 | 3 | **Solution** | Match problem to capability. Primary operating state. |
 | 4 | **Intent** | Booking CTA. Only on explicit buying signals. Minimum 2 substantive exchanges required. |
-### monitor-budget/ — Budget Monitor
-Runs every 4 hours via Cloud Scheduler. Checks spend against DegradeThreshold (80%) and MonthlyLimit (100%). Fires deduplicated alerts via webhook (Slack, Teams, PagerDuty). Sets ServiceTier to "Degraded" when budget is exhausted. Auto-recovers when headroom returns.
-### reset-budget/ — Monthly Budget Reset
-Runs on the 1st of each month. Resets spend counters and alert flags. Preserves custom budget limits — if you manually adjusted MonthlyLimitUSD mid-month, the reset only clears counters, not config.
+### scheduled-jobs/monitor-budget/ — Budget Monitor
+Runs every 4 hours via Cloud Scheduler. Checks spend against DegradeThreshold
+(80%) and MonthlyLimit (100%). Fires deduplicated alerts via webhook (Slack,
+Teams, PagerDuty). Sets ServiceTier to Degraded when budget is exhausted.
+Auto-recovers when headroom returns.
+### scheduled-jobs/reset-budget/ — Monthly Budget Reset
+Runs on the 1st of each month. Resets spend counters and alert flags. Preserves
+custom budget limits — if you manually adjusted `MonthlyLimitUSD` mid-month,
+the reset only clears counters, not config.
 ### widget/ — Chat Widget
-Self-contained HTML+CSS+JS chat widget. Zero dependencies, no build step. Paste before `</body>` on any page. Features:
+Self-contained chat widget. Zero dependencies, no build step.
+**Two deployment options:**
+| Option | File | Best For |
+|---|---|---|
+| Single-file | `widget.html` | WordPress, Webflow, static HTML — paste before `</body>` |
+| Separate JS | `widget.html` + `widget.js` | SPAs or CSP-restricted environments |
+**Features:**
 - Rotating teaser bubbles (random engagement hook, shown once per session)
-- `#chat` deep linking (any `<a href="#chat">` opens the widget)
-- Turnstile bot protection with queue-based send
+- `#chat` deep linking (any `<a href="#chat">` on the page opens the widget)
+- Turnstile bot protection with queue-based token lifecycle
 - Conversation history sent with each request (stateless server)
 - Lead capture form at session end
 - WordPress-compatible (`!important` positioning, max z-index)
 ---
-
----
-
 ## Getting Started
-
 ### Prerequisites
-
 - Google Cloud Platform account with billing enabled
 - [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and authenticated
 - Cloudflare account with Turnstile configured (free tier works)
 - Python 3.11+
-
----
 ### Step 1 — Enable APIs and Create Firestore
 ```bash
 export GCP_PROJECT=your-project-id
-cd site-sales-agent/scripts
+cd scripts/
 chmod +x 01-enable-apis.sh 02-create-firestore.sh
 ./01-enable-apis.sh
-./02-create-firestore.sh 
-```
-Step 2 — Prepare Site Content
-```bash
-cd site-sales-agent/sales-agent
-cp site_content_template.txt site_content_full.txt
-```
-Edit site_content_full.txt with your services, proof points, etc.
-
-Step 3 — Create the Context Cache
-```bash
+./02-create-firestore.sh
+Step 2 — Prepare Knowledge Base
+cd sales-agent/knowledge/
+# Create one .md file per topic defined in TOPIC_FILES
+# Use example.md as your template
+cp example.md topic_a.md
+cp example.md topic_b.md
+# ... edit each file with your domain-specific content
+Step 3 — Configure System Prompt
+cd sales-agent/
+cp system_prompt.example.md system_prompt.md
+# Edit system_prompt.md with your brand voice, conversation rules,
+# proof points, and behavioral constraints
+Step 4 — Configure Environment
+cp env.yaml.example env.yaml
+# Edit env.yaml with your project ID, region, consultation URL,
+# Turnstile secret, and other configuration
+Step 5 — Create the Context Caches
+cd sales-agent/
 export GCP_PROJECT=your-project-id
 python cache_setup.py
-```
 
-Step 4 — Deploy Cloud Functions
+This creates per-topic caches and writes the CacheMap to Firestore.
+Step 6 — Deploy Cloud Functions
 Sales agent:
-```bash
-cd site-sales-agent/sales-agent
+cd sales-agent/
 gcloud functions deploy sales-agent \
   --gen2 --runtime=python311 --trigger-http \
   --allow-unauthenticated \
-  --set-env-vars="GCP_PROJECT=$GCP_PROJECT,CONSULTATION_URL=https://your-booking-url" \
+  --env-vars-file=env.yaml \
   --entry-point=sales_agent
-```
+
 Lead capture:
-```bash
-cd ../capture-lead
+cd capture-lead/
 gcloud functions deploy capture-lead \
   --gen2 --runtime=python311 --trigger-http \
   --allow-unauthenticated \
   --entry-point=capture_lead
-```
+
 Cache refresh (scheduled):
-```bash
-cd ../refresh-cache
+cd refresh-cache/
 gcloud functions deploy refresh-cache \
   --gen2 --runtime=python311 --trigger-topic=refresh-cache \
   --entry-point=create_site_cache
-```
+
 Budget monitor (scheduled):
-```bash
-cd ../monitor-budget
+cd scheduled-jobs/monitor-budget/
 gcloud functions deploy monitor-budget \
   --gen2 --runtime=python311 --trigger-topic=monitor-budget \
   --entry-point=monitor_budget
-```
+
 Budget reset (scheduled):
-```bash
-cd ../reset-budget
+cd scheduled-jobs/reset-budget/
 gcloud functions deploy reset-budget \
   --gen2 --runtime=python311 --trigger-topic=reset-budget \
   --entry-point=reset_budget
-```
-Step 5 — Set Up Schedules
+Step 7 — Set Up Schedules
 Cache refresh — daily at 2am UTC:
-```bash
 gcloud scheduler jobs create pubsub refresh-cache-daily \
   --schedule="0 2 * * *" --topic=refresh-cache \
   --message-body="{}"
-```
+
 Budget monitor — every 4 hours:
-```bash
 gcloud scheduler jobs create pubsub monitor-budget-4h \
   --schedule="0 */4 * * *" --topic=monitor-budget \
   --message-body="{}"
-```
+
 Budget reset — 1st of each month at midnight UTC:
-```bash
 gcloud scheduler jobs create pubsub reset-budget-monthly \
   --schedule="0 0 1 * *" --topic=reset-budget \
   --message-body="{}"
-```
-Step 6 — Deploy the Widget
+Step 8 — Deploy the Widget
 Update AGENT_URL, LEAD_URL, and SITE_KEY in widget/widget.html
+Update AGENT_NAME with your brand
+Customize the TEASERS array with your engagement hooks
 Paste the contents of widget.html before </body> on your site
-
 System Prompt Architecture
 The agent uses a 4-state conversation machine with explicit transition rules, forbidden transitions, and behavioral constraints. Key design choices:
-"Answer ONLY from provided content" — prevents hallucinated capabilities
-"Never write a URL" — enforced in both prompt AND code via strip_urls()
-"[BOOK_CTA] at most ONCE" — prevents aggressive sales behavior
-"Not in first two responses" — forces value-first conversation
-"Low-energy reply handling" — prevents misreading politeness as purchase intent
-The prompt is intentionally duplicated across three files (main.py, cache_setup.py, refresh-cache/main.py). This is a deployment isolation decision — each module deploys independently as a separate Cloud Function. Shared imports would create coupling and versioning risk.
-See the inline comments in sales-agent/main.py for the full rationale.
-Prompt Duplication — Architectural Trade-off
-The system prompt appears in three files. This is deliberate:
-Approach	Trade-off
-Shared import	Deployment coupling — updating one function requires redeploying all three
-Firestore/GCS storage	Network dependency on cold start — adds ~200ms latency
-Duplication (current)	Manual sync required, but each module deploys independently with zero coupling
-If you update the prompt, update all three files. The comment "MUST be identical" in each file is the manual contract.
+Rule	Why
+"Answer ONLY from provided content"	Prevents hallucinated capabilities
+"Never write a URL"	Enforced in both prompt AND code via strip_urls()
+"[BOOK_CTA] at most ONCE"	Prevents aggressive sales behavior
+"Not in first two responses"	Forces value-first conversation
+"Low-energy reply handling"	Prevents misreading politeness as purchase intent
+"Proof point governance"	Never cite the same metric twice per conversation
+The system prompt is loaded from an external file (system_prompt.md) at function startup. See system_prompt.example.md for the expected structure and conversation state definitions.
 Cost Model
-At the time of writing (Gemini 2.5 Flash Lite pricing):
+At the time of writing (Gemini Flash Lite pricing):
 Component	Rate
 Cached input tokens	$0.15 / 1M tokens
 Non-cached input tokens	$1.50 / 1M tokens
 Output tokens	$7.50 / 1M tokens
 Example: 1,000 conversations/month, average 4 turns each
 Scenario	Monthly Cost
-With cache	~$2.50
-Without cache	~$18.00
+With topic caches	~$2.50
+Without caches	~$18.00
 Savings	~85%
-The default budget is set to $10/month with degradation at $8 and a hard ceiling at $12. Adjust in reset-budget/main.py or directly in Firestore.
-Part of the Cognitive Work Architecture Series
-This repo is the code companion to the Cognitive Work Architecture series on LinkedIn — exploring how to build AI agents that operate with the same governance, accountability, and cost discipline you'd expect from any production enterprise system.
-The architecture is the moat. The code is open.
+The default budget is $10/month with degradation at $8 and a hard ceiling at $12. Adjust via environment variables or directly in Firestore.
+Customization Guide
+Adding a New Topic
+Create knowledge/new_topic.md with your content
+Add entry to TOPIC_FILES in sales-agent/main.py, cache_setup.py, and refresh-cache/main.py
+Add the topic to VALID_FLOWS and CLASSIFIER_PROMPT in sales-agent/main.py
+Run python cache_setup.py to create the cache
+Deploy the updated functions
+Adjusting Budget Limits
+Variable	Default	Where
+MONTHLY_LIMIT_USD	$10.00	reset-budget/main.py or env var
+DEGRADE_THRESHOLD_USD	$8.00	reset-budget/main.py or env var
+HARD_CEILING_USD	$12.00	reset-budget/main.py or env var
+Changing the Model
+Set the MODEL environment variable. The agent is tested with gemini-2.0-flash-lite but works with any Gemini model that supports content caching. Larger models improve response quality but increase cost — update the token rate constants in sales-agent/main.py accordingly.
+Firestore Schema
+Collection	Document	Key Fields
+AgentConfig	SalesAgent	CacheMap (topic → cache resource name)
+AgentBudget	{tenant}_{YYYY-MM}	CurrentSpendUSD, ServiceTier, MonthlyLimitUSD, alert flags
+AgentSessions	{session_id}	PromptCount, ActiveFlow, LeadCaptured, ExpiresAt
+Leads	auto-generated	email, company, session_id, source, tier_at_capture
 License
 MIT — see LICENSE for details.
 Use it, fork it, build on it. The architecture decisions are documented in inline comments throughout the codebase. If you find them useful, a star helps others find the repo.
+
+---
+### What Changed vs. Original README
+| Section | Change | Why |
+|---|---|---|
+| **Title** | "Cognitive Work Architecture" → "Site Sales Agent" | Removed brand, focused on the product |
+| **Architecture diagram** | Added ASCII diagrams | Visual clarity for GitHub visitors |
+| **Per-topic caching** | New section | Your code uses topic caching — README didn't reflect it |
+| **Intent classification** | New section | Key architecture feature was undocumented |
+| **Repository structure** | Updated to match actual file tree | Old structure referenced `site_content_template.txt` which no longer exists |
+| **"What's Not in This Repo"** | New section | Explicitly documents the private files and how to create them |
+| **Getting Started** | Added Steps 2-4 (knowledge, prompt, env) | Old README skipped these — users would be stuck |
+| **System Prompt section** | Removed prompt duplication discussion | Prompt is now externalized — no duplication |
+| **Customization Guide** | New section | Practical how-to for forkers |
+| **Firestore Schema** | New section | Developers need this to understand the data model |
+| **LinkedIn reference** | Removed | Generic open-source repo, not marketing |
+| **Cost model tables** | Fixed markdown formatting | Original had broken pipe formatting |
+---
