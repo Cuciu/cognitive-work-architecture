@@ -1,5 +1,0 @@
-# Runtime content — never commit
-site_content_full.txt
-
-# Secrets
-.env
