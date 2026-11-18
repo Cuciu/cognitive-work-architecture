@@ -49,7 +49,7 @@ flowchart TD
     P3 --> P4[strip_urls]
     P4 --> P5[CTA gate check]
     P5 --> OUT[Response to visitor]
-
+'''
 Caches are set with a 35-day TTL (3024000s) covering a 31-day billing
 cycle plus buffer. The daily refresh schedule rebuilds caches every 24 hours —
 the TTL is a safety net, not the primary refresh mechanism.
