@@ -1,10 +1,9 @@
 <!--
   ===========================================================================
-  Cognitive Work Architecture — Site Sales Agent — Chat Widget (Production)
+  Site Sales Agent — Chat Widget (Production)
   ===========================================================================
   Self-contained chat widget with teaser bubbles, Turnstile bot protection,
   conversation memory, and lead capture. Single file — paste before </body>.
-
   ARCHITECTURE DECISIONS:
     - Single file: HTML + CSS + JS inline. No build step, no dependencies.
       Paste one snippet, done. Works on WordPress, Webflow, static HTML.
@@ -13,29 +12,23 @@
     - z-index 2147483647 (max int32): ensures the widget floats above every
       WordPress plugin, popup, and sticky header.
     - Turnstile loaded async/defer: doesn't block page render.
-
   CUSTOMIZATION:
     1. Replace --sa-brand with your brand color
     2. Replace AGENT_URL / LEAD_URL with your Cloud Function endpoints
     3. Replace SITE_KEY with your Cloudflare Turnstile site key
-    4. Update greeting text and teaser messages
-
-  Repo:   cognitive-work-architecture/site-sales-agent
-  Module: widget
+    4. Update AGENT_NAME, greeting text, and teaser messages
+    5. Customize TEASERS array with your own engagement hooks
   License: MIT
   ===========================================================================
 -->
 <meta charset="utf-8">
-
 <!-- SECURITY: Cloudflare Turnstile — loaded async so it doesn't block page render -->
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-
 <style>
   /* -----------------------------------------------------------------------
      BRANDING — Single variable reskins the entire widget
      ----------------------------------------------------------------------- */
   :root { --sa-brand: #0d497a; }
-
   /* -----------------------------------------------------------------------
      LAUNCHER — Fixed button with pulse animation and notification dot
      !important overrides WordPress page builder positioning rules
@@ -50,7 +43,6 @@
     display: flex; align-items: center; gap: 8px;
     animation: sa-pulse 2.5s infinite;
   }
-
   /* ENGAGEMENT: Pulse animation draws attention without being intrusive.
      Stops naturally after the visitor notices the button. */
   @keyframes sa-pulse {
@@ -58,14 +50,12 @@
     70%  { box-shadow: 0 4px 14px rgba(13,73,122,.3), 0 0 0 14px rgba(13,73,122,0); }
     100% { box-shadow: 0 4px 14px rgba(13,73,122,.3), 0 0 0 0 rgba(13,73,122,0); }
   }
-
   /* Notification dot — signals "something to see" */
   #sa-dot {
     position: absolute; top: -4px; right: -4px;
     width: 14px; height: 14px;
     background: #e53935; border-radius: 50%; border: 2px solid #fff;
   }
-
   /* -----------------------------------------------------------------------
      TEASER BUBBLE — Rotating auto-ask prompt, shown once per session
      Slides in from below with animation. Click opens chat + sends question.
@@ -92,7 +82,6 @@
     position: absolute; top: 4px; right: 8px;
     color: #999; font-size: 16px; line-height: 1; cursor: pointer;
   }
-
   /* -----------------------------------------------------------------------
      CHAT PANEL — Responsive container
      ----------------------------------------------------------------------- */
@@ -108,7 +97,6 @@
     box-sizing: border-box;
   }
   #sa-panel * { box-sizing: border-box; }
-
   /* Header */
   #sa-head {
     background: var(--sa-brand); color: #fff;
@@ -120,10 +108,8 @@
     background: none; border: none; color: #fff;
     font-size: 22px; line-height: 1; cursor: pointer;
   }
-
   /* Message log */
   #sa-log { flex: 1; overflow-y: auto; padding: 14px; background: #f7f8fa; }
-
   /* Message bubbles */
   .sa-msg {
     margin: 8px 0; padding: 10px 12px;
@@ -139,7 +125,6 @@
     border: 1px solid #e6e8eb; border-bottom-left-radius: 3px;
   }
   .sa-typing { opacity: .6; }
-
   /* Footer with input and Turnstile container */
   #sa-foot {
     display: flex; flex-direction: column;
@@ -158,10 +143,8 @@
     white-space: nowrap; cursor: pointer;
   }
   #sa-send:disabled { opacity: .5; }
-
   /* Turnstile widget container */
   #sa-ts { margin-top: 8px; }
-
   /* CTA buttons and lead capture form */
   .cta-button {
     display: inline-block; margin-top: 6px;
@@ -183,22 +166,19 @@
   }
   #sa-lead-status { font-size: 12px; color: #444; margin-top: 4px; }
 </style>
-
 <!-- TEASER BUBBLE — Appears once per session with a random engagement hook -->
 <div id="sa-teaser">
   <span id="sa-teaser-close">×</span>
   <span id="sa-teaser-text"></span>
 </div>
-
 <!-- LAUNCHER BUTTON with notification dot -->
 <button id="sa-launcher">
   <span id="sa-dot"></span>💬 Chat with us
 </button>
-
 <!-- CHAT PANEL -->
 <div id="sa-panel">
   <div id="sa-head">
-    <b>Sky Alleys Assistant</b>
+    <b>Sales Assistant</b>
     <button id="sa-close">×</button>
   </div>
   <div id="sa-log"></div>
@@ -213,13 +193,16 @@
     <div id="sa-ts"></div>
   </div>
 </div>
-
 <script>
 /**
  * Site Sales Agent — Widget Logic (inline, production)
  *
- * See widget/README.md for architecture notes.
- * See sales-agent/main.py for server-side guardrails.
+ * Features:
+ *   - Turnstile bot protection with token lifecycle
+ *   - Rotating teaser bubbles (one per session)
+ *   - Conversation history (client-side, capped)
+ *   - Lead capture form on session cap / degraded mode
+ *   - Budget-aware tier handling
  */
 (function () {
   // ========================================================================
@@ -228,10 +211,9 @@
   const AGENT_URL   = "https://REGION-PROJECT_ID.cloudfunctions.net/sales-agent";
   const LEAD_URL    = "https://REGION-PROJECT_ID.cloudfunctions.net/capture-lead";
   const SITE_KEY    = "YOUR_CLOUDFLARE_TURNSTILE_SITE_KEY";
-
+  const AGENT_NAME  = "Sales Assistant";
   // BUDGET: Client-side history cap — defense in depth with server-side limit
   const MAX_HISTORY = 10;
-
   // Stable session ID — persisted in localStorage
   const SESSION_ID = (() => {
     let s = localStorage.getItem("sa_session_id");
@@ -242,51 +224,38 @@
     }
     return s;
   })();
-
   // ========================================================================
   // TEASERS — Rotating engagement hooks, one shown per session
+  // Customize these with your own value propositions and proof points.
+  // Each teaser has:
+  //   msg: HTML shown in the bubble (use <b> for emphasis)
+  //   ask: Question auto-sent when visitor clicks the bubble
   // ========================================================================
   const TEASERS = [
-    { msg: "👋 <b>Hi there!</b> Cloud migrations are hard — we've made them <b>33% cheaper</b>. Ask me how.",
-      ask: "How do you make cloud migrations 33% cheaper?" },
-    { msg: "💡 <b>Hey!</b> AI pilots rarely fail on tech — they fail on governance. We fix that.",
-      ask: "Why do AI pilots fail on governance, and how do you fix that?" },
-    { msg: "🤖 <b>Hi!</b> Most AI agents run without cost controls. Ours don't. Ask me why.",
+    { msg: "👋 <b>Hi there!</b> We help companies reduce cloud costs by <b>30%+</b>. Ask me how.",
+      ask: "How do you reduce cloud costs?" },
+    { msg: "💡 <b>Hey!</b> Most AI pilots fail on governance, not tech. We fix that.",
+      ask: "How do you handle AI governance?" },
+    { msg: "🤖 <b>Hi!</b> Our AI agents run with built-in cost controls. Ask me why that matters.",
       ask: "How do you add cost controls to AI agents?" },
-    { msg: "🎯 <b>Welcome!</b> Boards want AI answers, not experiments. We deliver them in <b>3 weeks</b>.",
-      ask: "What is your 3-week board AI reality check?" },
-    { msg: "🚀 <b>Hey!</b> Tired of paying for consulting hours with no measurable result? So were we.",
+    { msg: "🚀 <b>Hey!</b> Tired of paying for consulting hours with no measurable result?",
       ask: "How is your consulting model different from billing hours?" },
-    { msg: "📊 <b>Hi there!</b> Enterprise AI at scale needs governance baked in — not bolted on. Ask me more.",
-      ask: "How do you bake governance into enterprise AI at scale?" },
-    { msg: "🔒 <b>Hello!</b> Regulated industry? We run AI in <b>air-gapped environments</b>. Ask me how.",
-      ask: "How do you run AI in air-gapped or regulated environments?" },
-    { msg: "🤝 <b>Hi!</b> Evaluating a tech acquisition? Our <b>8-dimension framework</b> catches what others miss.",
-      ask: "Tell me about your 8-dimension technical due diligence framework." },
-    { msg: "⚡ <b>Hey!</b> We don't bill hours — we co-invest in your outcome. Curious how that works?",
-      ask: "How does your outcome-based, co-invested model work?" },
-    { msg: "🏭 <b>Hi there!</b> Factory-floor AI inference — offline, governed, and production-ready. Ask me more.",
-      ask: "How do you deploy AI inference on the factory floor?" }
   ];
   const chosenTeaser = TEASERS[Math.floor(Math.random() * TEASERS.length)];
-
   // ========================================================================
   // STATE
   // ========================================================================
   let lastTier = "Full";
   let pendingQuestion = null;
   let history = [];
-
   const $ = (id) => document.getElementById(id);
   const log = $("sa-log"), input = $("sa-input"), sendBtn = $("sa-send");
   const panel = $("sa-panel"), launcher = $("sa-launcher"), closeBtn = $("sa-close");
   const teaser = $("sa-teaser"), teaserClose = $("sa-teaser-close"), dot = $("sa-dot");
-
   // ========================================================================
   // TURNSTILE — Token lifecycle: render → use → renew
   // ========================================================================
   let tsWidgetId = null, tsToken = "";
-
   function token() { return tsToken; }
   function renewTS() {
     tsToken = "";
@@ -319,11 +288,9 @@
     }
   }
   renderTS();
-
   // ========================================================================
   // HELPERS
   // ========================================================================
-
   function addMsg(html, who) {
     const d = document.createElement("div");
     d.className = "sa-msg sa-" + who;
@@ -331,18 +298,15 @@
     log.appendChild(d);
     log.scrollTop = log.scrollHeight;
   }
-
   function escapeHtml(t) {
     var d = document.createElement("div");
     d.textContent = (t == null ? "" : String(t));
     return d.innerHTML;
   }
-
   function pushHistory(role, text) {
     history.push({ role: role, text: (text || "").toString() });
     if (history.length > MAX_HISTORY) history = history.slice(-MAX_HISTORY);
   }
-
   function leadForm() {
     return "<div class='sa-lead'><p>Leave your email and we'll follow up:</p>"
       + "<input id='sa-lead-email' type='email' placeholder='you@company.com'/>"
@@ -350,7 +314,6 @@
       + "<button id='sa-lead-submit'>Send</button>"
       + "<div id='sa-lead-status'></div></div>";
   }
-
   async function submitLead() {
     const email = ($("sa-lead-email").value || "").trim();
     const company = ($("sa-lead-company").value || "").trim();
@@ -376,11 +339,9 @@
       renewTS();
     }
   }
-
   // ========================================================================
   // CORE SEND
   // ========================================================================
-
   async function doSend(msg) {
     addMsg(escapeHtml(msg), "user");
     sendBtn.disabled = true;
@@ -400,7 +361,6 @@
       typing.remove();
       lastTier = j.tier || lastTier;
       const isEnd = (j.tier === "SessionCap" || j.tier === "Degraded");
-
       if (j.html) {
         addMsg(j.html, "bot");
         pushHistory("model", (j.reply || ""));
@@ -415,7 +375,6 @@
       } else {
         addMsg("Hmm, I didn't catch that. Try rephrasing?", "bot");
       }
-
       const sub = $("sa-lead-submit");
       if (sub) sub.onclick = submitLead;
       renewTS();
@@ -428,11 +387,9 @@
       input.focus();
     }
   }
-
   // ========================================================================
   // QUEUE SEND — handles Turnstile token timing
   // ========================================================================
-
   function queueSend(msg) {
     msg = (msg || "").trim();
     if (!msg) return;
@@ -454,18 +411,15 @@
       }, 4000);
     }
   }
-
   function sendFromInput() {
     const msg = (input.value || "").trim();
     if (!msg) return;
     input.value = "";
     queueSend(msg);
   }
-
   // ========================================================================
   // OPEN / CLOSE
   // ========================================================================
-
   function openChat() {
     panel.style.display = "flex";
     launcher.style.display = "none";
@@ -475,13 +429,12 @@
     input.focus();
     if (!log.childElementCount) {
       addMsg(
-        "Hi! I'm the Sky Alleys assistant 👋 " +
-        "Ask me about our AI, cloud, or advisory services — " +
+        "Hi! I'm your " + AGENT_NAME + " 👋 " +
+        "Ask me about our services — " +
         "or how we deliver outcome-based results.", "bot"
       );
     }
   }
-
   function openChatWithQuestion(question) {
     panel.style.display = "flex";
     launcher.style.display = "none";
@@ -489,12 +442,11 @@
     dot.style.display = "none";
     renderTS();
     if (!log.childElementCount) {
-      addMsg("Hi! I'm the Sky Alleys assistant 👋", "bot");
+      addMsg("Hi! I'm your " + AGENT_NAME + " 👋", "bot");
     }
     if (question) { queueSend(question); }
     else { input.focus(); }
   }
-
   // ========================================================================
   // WIRE EVENTS
   // ========================================================================
@@ -512,7 +464,6 @@
     panel.style.display = "none";
     launcher.style.display = "flex";
   };
-
   // ========================================================================
   // TEASER — Show once per browser session after 4-second delay
   // ========================================================================
