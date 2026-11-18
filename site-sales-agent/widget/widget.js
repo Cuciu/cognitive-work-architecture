@@ -1,5 +1,5 @@
 /**
- * Cognitive Work Architecture — Site Sales Agent — Widget Logic
+ * Site Sales Agent — Widget Logic
  * ==============================================================
  * Client-side chat logic. Manages conversation state, API calls,
  * Turnstile verification, and lead capture.
@@ -26,8 +26,6 @@
  *   5. After every API call → renew token for next message
  *   6. If token never arrives (4s timeout) → send anyway (server validates)
  *
- * Repo:   cognitive-work-architecture/site-sales-agent
- * Module: widget
  * License: MIT
  */
 
@@ -36,10 +34,12 @@
   // #chat OPENER — ATTACHED FIRST so it works even if later code errors.
   // Opens the chat panel from ANY <a href="...#chat"> on the page.
   //
-  // WHY BETTER: Most chat widgets only open from their own button.
+  // WHY: Most chat widgets only open from their own button.
   // This lets you put "Chat with us" links anywhere on your site —
   // navigation, CTAs, inline text — and they all open the same widget.
   // ==========================================================================
+  const AGENT_NAME = "Sales Assistant";
+
   document.addEventListener("click", function (e) {
     var link = e.target.closest('a[href*="#chat"]');
     if (!link) return;
@@ -57,8 +57,8 @@
       var d = document.createElement("div");
       d.className = "sa-msg sa-bot";
       d.innerHTML =
-        "Hi! I'm the Sky Alleys assistant 👋 " +
-        "Ask me about our AI, cloud, or advisory services.";
+        "Hi! I'm your " + AGENT_NAME + " 👋 " +
+        "Ask me about our services.";
       logEl.appendChild(d);
     }
     var inp = document.getElementById("sa-input");
@@ -106,54 +106,32 @@
   // ==========================================================================
   // TEASERS — Rotating auto-ask prompts
   // ==========================================================================
-  // WHY BETTER: Static "Chat with us" buttons get ignored. Rotating teasers
+  // WHY: Static "Chat with us" buttons get ignored. Rotating teasers
   // that surface a specific proof point or pain point generate curiosity.
   // Each teaser has a pre-loaded question — clicking it opens the chat AND
   // sends the question automatically. The visitor gets value immediately.
   //
   // GUARDRAIL: Shown ONCE per browser session (sessionStorage).
   // No repeat popups. Respects visitor attention.
+  //
+  // CUSTOMIZE: Replace these with your own value propositions and proof points.
   // ==========================================================================
   const TEASERS = [
     {
-      msg: "👋 <b>Hi there!</b> Cloud migrations are hard — we've made them <b>33% cheaper</b>. Ask me how.",
-      ask: "How do you make cloud migrations 33% cheaper?",
+      msg: "👋 <b>Hi there!</b> We help companies reduce cloud costs by <b>30%+</b>. Ask me how.",
+      ask: "How do you reduce cloud costs?",
     },
     {
-      msg: "💡 <b>Hey!</b> AI pilots rarely fail on tech — they fail on governance. We fix that.",
-      ask: "Why do AI pilots fail on governance, and how do you fix that?",
+      msg: "💡 <b>Hey!</b> Most AI pilots fail on governance, not tech. We fix that.",
+      ask: "How do you handle AI governance?",
     },
     {
-      msg: "🤖 <b>Hi!</b> Most AI agents run without cost controls. Ours don't. Ask me why.",
+      msg: "🤖 <b>Hi!</b> Our AI agents run with built-in cost controls. Ask me why that matters.",
       ask: "How do you add cost controls to AI agents?",
     },
     {
-      msg: "🎯 <b>Welcome!</b> Boards want AI answers, not experiments. We deliver them in <b>3 weeks</b>.",
-      ask: "What is your 3-week board AI reality check?",
-    },
-    {
-      msg: "🚀 <b>Hey!</b> Tired of paying for consulting hours with no measurable result? So were we.",
+      msg: "🚀 <b>Hey!</b> Tired of paying for consulting hours with no measurable result?",
       ask: "How is your consulting model different from billing hours?",
-    },
-    {
-      msg: "📊 <b>Hi there!</b> Enterprise AI at scale needs governance baked in — not bolted on. Ask me more.",
-      ask: "How do you bake governance into enterprise AI at scale?",
-    },
-    {
-      msg: "🔒 <b>Hello!</b> Regulated industry? We run AI in <b>air-gapped environments</b>. Ask me how.",
-      ask: "How do you run AI in air-gapped or regulated environments?",
-    },
-    {
-      msg: "🤝 <b>Hi!</b> Evaluating a tech acquisition? Our <b>8-dimension framework</b> catches what others miss.",
-      ask: "Tell me about your 8-dimension technical due diligence framework.",
-    },
-    {
-      msg: "⚡ <b>Hey!</b> We don't bill hours — we co-invest in your outcome. Curious how that works?",
-      ask: "How does your outcome-based, co-invested model work?",
-    },
-    {
-      msg: "🏭 <b>Hi there!</b> Factory-floor AI inference — offline, governed, and production-ready. Ask me more.",
-      ask: "How do you deploy AI inference on the factory floor?",
     },
   ];
   const chosenTeaser = TEASERS[Math.floor(Math.random() * TEASERS.length)];
@@ -435,8 +413,8 @@
     if (input) input.focus();
     if (log && !log.childElementCount) {
       addMsg(
-        "Hi! I'm the Sky Alleys assistant 👋 " +
-        "Ask me about our AI, cloud, or advisory services — " +
+        "Hi! I'm your " + AGENT_NAME + " 👋 " +
+        "Ask me about our services — " +
         "or how we deliver outcome-based results.",
         "bot"
       );
@@ -450,7 +428,7 @@
     if (dot) dot.style.display = "none";
     renderTS();
     if (log && !log.childElementCount) {
-      addMsg("Hi! I'm the Sky Alleys assistant 👋", "bot");
+      addMsg("Hi! I'm your " + AGENT_NAME + " 👋", "bot");
     }
     if (question) {
       queueSend(question);
