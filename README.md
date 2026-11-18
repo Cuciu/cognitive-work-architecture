@@ -281,20 +281,3 @@ License
 MIT — see LICENSE for details.
 Use it, fork it, build on it. The architecture decisions are documented in inline comments throughout the codebase. If you find them useful, a star helps others find the repo.
 
----
-### What Changed vs. Original README
-| Section | Change | Why |
-|---|---|---|
-| **Title** | "Cognitive Work Architecture" → "Site Sales Agent" | Removed brand, focused on the product |
-| **Architecture diagram** | Added ASCII diagrams | Visual clarity for GitHub visitors |
-| **Per-topic caching** | New section | Your code uses topic caching — README didn't reflect it |
-| **Intent classification** | New section | Key architecture feature was undocumented |
-| **Repository structure** | Updated to match actual file tree | Old structure referenced `site_content_template.txt` which no longer exists |
-| **"What's Not in This Repo"** | New section | Explicitly documents the private files and how to create them |
-| **Getting Started** | Added Steps 2-4 (knowledge, prompt, env) | Old README skipped these — users would be stuck |
-| **System Prompt section** | Removed prompt duplication discussion | Prompt is now externalized — no duplication |
-| **Customization Guide** | New section | Practical how-to for forkers |
-| **Firestore Schema** | New section | Developers need this to understand the data model |
-| **LinkedIn reference** | Removed | Generic open-source repo, not marketing |
-| **Cost model tables** | Fixed markdown formatting | Original had broken pipe formatting |
----
