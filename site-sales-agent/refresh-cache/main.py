@@ -31,17 +31,18 @@ KB_DIR = os.environ.get("KB_DIR", os.path.join(_HERE, "knowledge"))
 
 # ---------------------------------------------------------------------------
 # Topic → KB filename mapping
+# Customize with your own service lines / knowledge domains.
 # Each topic gets its own cache. GENERAL has no KB cache:
 # the greeter runs on system_instruction alone.
 # ---------------------------------------------------------------------------
 TOPIC_FILES = {
-    "CWA":          "cwa.md",
-    "FINOPS":       "finops.md",
-    "SOVEREIGN":    "sovereign.md",
-    "ADVISORY":     "advisory.md",
-    "PRESALES":     "presales.md",
-    "CLOUD":        "cloud.md",
-    "ENTERPRISEAI": "enterpriseai.md",
+    "TOPIC_A": "topic_a.md",
+    "TOPIC_B": "topic_b.md",
+    "TOPIC_C": "topic_c.md",
+    "TOPIC_D": "topic_d.md",
+    "TOPIC_E": "topic_e.md",
+    "TOPIC_F": "topic_f.md",
+    "TOPIC_G": "topic_g.md",
 }
 
 # 35 days (covers 31-day billing cycle + buffer)
