@@ -27,32 +27,13 @@ flowchart LR
     style FS fill:#f9ab00,color:#000
     style SCH fill:#666,color:#fff
 Per-Topic Caching with Intent Classification
-The agent classifies each visitor's intent on their first message, locks a
-topic flow for the session, and routes to a topic-specific Vertex AI content
-cache. This means:
+The agent classifies each visitor's intent on their first message, locks a topic flow for the session, and routes to a topic-specific Vertex AI content cache. This means:
 System prompt lives in code, injected at call time — never cached
 Knowledge base is split per topic — one cache per service line
 Adding a new topic = add one .md file + one TOPIC_FILES entry
 Cache miss = agent still works with inline fallback (graceful, not broken)
-flowchart TD
-    MSG[First message] --> CL{classify_intent}
-    CL -->|TOPIC_A| CA[Topic A Cache<br/>KB content only]
-    CL -->|TOPIC_B| CB[Topic B Cache<br/>KB content only]
-    CL -->|GENERAL| GEN[No cache<br/>system prompt + global.md]
-    CA --> SYS[system_instruction<br/>injected at call time]
-    CB --> SYS
-    GEN --> SYS
-    SYS --> RESP[Generate response]
-    RESP --> P1[smart_truncate]
-    P1 --> P2[strip_premature_cta]
-    P2 --> P3[extract BOOK_CTA]
-    P3 --> P4[strip_urls]
-    P4 --> P5[CTA gate check]
-    P5 --> OUT[Response to visitor]
-```
-Caches are set with a 35-day TTL (3024000s) covering a 31-day billing
-cycle plus buffer. The daily refresh schedule rebuilds caches every 24 hours —
-the TTL is a safety net, not the primary refresh mechanism.
+flowchart TD MSG[First message] --> CL{classify_intent} CL -->|TOPIC_A| CA[Topic A Cache<br/>KB content only] CL -->|TOPIC_B| CB[Topic B Cache<br/>KB content only] CL -->|GENERAL| GEN[No cache<br/>system prompt + global.md] CA --> SYS[system_instruction<br/>injected at call time] CB --> SYS GEN --> SYS SYS --> RESP[Generate response] RESP --> P1[smart_truncate] P1 --> P2[strip_premature_cta] P2 --> P3[extract BOOK_CTA] P3 --> P4[strip_urls] P4 --> P5[CTA gate check] P5 --> OUT[Response to visitor]
+Caches are set with a 35-day TTL (3024000s) covering a 31-day billing cycle plus buffer. The daily refresh schedule rebuilds caches every 24 hours — the TTL is a safety net, not the primary refresh mechanism.
 Budget Governance Lifecycle
 Track (per request) → Monitor (every 4h) → Enforce (auto-degrade) → Reset (monthly) → new month → Track …
 Spend Range	Tier	Behavior
@@ -75,9 +56,7 @@ Output	$7.50 / 1M tokens	Always
 Cache miss = agent still works, just costs more. Graceful degradation, not failure.
 Design Principles
 🧠 Stateless Server — Client-Side Conversation Memory
-The server stores zero conversation content. The widget sends the full
-conversation history with every request. The server processes one turn and
-responds — it never persists what was said.
+The server stores zero conversation content. The widget sends the full conversation history with every request. The server processes one turn and responds — it never persists what was said.
 How it works:
 Widget maintains history[] array in browser memory
 Every API call sends the full history (capped at MAX_HISTORY = 10 turns)
@@ -90,9 +69,7 @@ No session storage costs	Firestore stores 4 fields per session, not full transcr
 Defense in depth	Client caps at 10 turns, server independently caps at 10 turns
 Instant scalability	No session affinity — any function instance can serve any request
 GDPR-friendly	Nothing to delete if the visitor never submits a lead form
-The trade-off: if the visitor refreshes the page, conversation history is lost.
-This is intentional — a sales conversation that requires persistence across
-page loads needs a CRM, not a chat widget.
+The trade-off: if the visitor refreshes the page, conversation history is lost. This is intentional — a sales conversation that requires persistence across page loads needs a CRM, not a chat widget.
 🛡️ Guardrails — Defense in Depth
 The system prompt tells the model what to do. Code enforces it.
 Layer	What It Does	Why It Exists
@@ -181,27 +158,13 @@ system_prompt.md	Agent system prompt and conversation rules	Populate using syste
 env.yaml	Environment variables and secrets	Populate using env.yaml.example as template
 Module Reference
 capture-lead/ — Lead Capture
-Serverless endpoint that captures inbound leads with email validation, Turnstile
-bot protection, Firestore persistence, and optional CRM webhook forwarding.
-Links leads back to agent sessions for attribution.
+Serverless endpoint that captures inbound leads with email validation, Turnstile bot protection, Firestore persistence, and optional CRM webhook forwarding. Links leads back to agent sessions for attribution.
 refresh-cache/ — Per-Topic Cache Refresh
-Scheduled Cloud Function that rebuilds Vertex AI content caches for each topic.
-Each topic gets its own lean cache (KB content only — no system prompt). Caches
-are set with a 35-day TTL covering a 31-day billing cycle plus buffer. The
-daily schedule ensures caches are refreshed well before expiry. Writes the
-CacheMap to Firestore so the agent picks up new caches at runtime without
-redeployment.
+Scheduled Cloud Function that rebuilds Vertex AI content caches for each topic. Each topic gets its own lean cache (KB content only — no system prompt). Caches are set with a 35-day TTL covering a 31-day billing cycle plus buffer. The daily schedule ensures caches are refreshed well before expiry. Writes the CacheMap to Firestore so the agent picks up new caches at runtime without redeployment.
 sales-agent/ — Core Agent
-The conversational engine. Classifies visitor intent on first message, locks
-a topic flow for the session, and routes to the appropriate content cache.
-Processes one turn per request with a 5-layer output guardrail pipeline,
-per-request cost tracking, and cache-first inference with inline fallback.
-The widget sends the full conversation history with every request. The
-server is stateless regarding conversation content — it rebuilds context from
-the payload, generates one response, and forgets. Only metadata (prompt count,
-budget spend, active flow) is persisted.
-Includes cache_setup.py for manual cache creation during initial deployment
-or debugging.
+The conversational engine. Classifies visitor intent on first message, locks a topic flow for the session, and routes to the appropriate content cache. Processes one turn per request with a 5-layer output guardrail pipeline, per-request cost tracking, and cache-first inference with inline fallback.
+The widget sends the full conversation history with every request. The server is stateless regarding conversation content — it rebuilds context from the payload, generates one response, and forgets. Only metadata (prompt count, budget spend, active flow) is persisted.
+Includes cache_setup.py for manual cache creation during initial deployment or debugging.
 Conversation State Machine:
 State	Name	Behavior
 1	Discovery	Ask one question. Enter once, never return.
@@ -209,14 +172,9 @@ State	Name	Behavior
 3	Solution	Match problem to capability. Primary operating state.
 4	Intent	Booking CTA. Only on explicit buying signals. Minimum 2 substantive exchanges required.
 scheduled-jobs/monitor-budget/ — Budget Monitor
-Runs every 4 hours via Cloud Scheduler. Checks spend against DegradeThreshold
-(80%) and MonthlyLimit (100%). Fires deduplicated alerts via webhook (Slack,
-Teams, PagerDuty). Sets ServiceTier to Degraded when budget is exhausted.
-Auto-recovers when headroom returns.
+Runs every 4 hours via Cloud Scheduler. Checks spend against DegradeThreshold (80%) and MonthlyLimit (100%). Fires deduplicated alerts via webhook (Slack, Teams, PagerDuty). Sets ServiceTier to Degraded when budget is exhausted. Auto-recovers when headroom returns.
 scheduled-jobs/reset-budget/ — Monthly Budget Reset
-Runs on the 1st of each month. Resets spend counters and alert flags. Preserves
-custom budget limits — if you manually adjusted MonthlyLimitUSD mid-month,
-the reset only clears counters, not config.
+Runs on the 1st of each month. Resets spend counters and alert flags. Preserves custom budget limits — if you manually adjusted MonthlyLimitUSD mid-month, the reset only clears counters, not config.
 widget/ — Chat Widget
 Self-contained chat widget. Zero dependencies, no build step.
 Two deployment options:
@@ -318,8 +276,7 @@ Update AGENT_NAME with your brand
 Customize the TEASERS array with your engagement hooks
 Paste the contents of widget.html before </body> on your site
 System Prompt Architecture
-The agent uses a 4-state conversation machine with explicit transition rules,
-forbidden transitions, and behavioral constraints. Key design choices:
+The agent uses a 4-state conversation machine with explicit transition rules, forbidden transitions, and behavioral constraints. Key design choices:
 Rule	Why
 "Answer ONLY from provided content"	Prevents hallucinated capabilities
 "Never write a URL"	Enforced in both prompt AND code via strip_urls()
@@ -327,9 +284,7 @@ Rule	Why
 "Not in first two responses"	Forces value-first conversation
 "Low-energy reply handling"	Prevents misreading politeness as purchase intent
 "Proof point governance"	Never cite the same metric twice per conversation
-The system prompt is loaded from an external file (system_prompt.md) at
-function startup. See system_prompt.example.md for the expected structure
-and conversation state definitions.
+The system prompt is loaded from an external file (system_prompt.md) at function startup. See system_prompt.example.md for the expected structure and conversation state definitions.
 Cost Model
 At the time of writing (Gemini Flash Lite pricing):
 Component	Rate
@@ -341,8 +296,7 @@ Scenario	Monthly Cost
 With topic caches	~$2.50
 Without caches	~$18.00
 Savings	~85%
-The default budget is $10/month with degradation at $8 and a hard ceiling
-at $12. Adjust via environment variables or directly in Firestore.
+The default budget is $10/month with degradation at $8 and a hard ceiling at $12. Adjust via environment variables or directly in Firestore.
 Customization Guide
 Adding a New Topic
 Create knowledge/new_topic.md with your content
@@ -356,26 +310,15 @@ MONTHLY_LIMIT_USD	$10.00	reset-budget/main.py or env var
 DEGRADE_THRESHOLD_USD	$8.00	reset-budget/main.py or env var
 HARD_CEILING_USD	$12.00	reset-budget/main.py or env var
 Adjusting Cache TTL
-Default: 3024000s (35 days). Set via CACHE_TTL environment variable.
-Aligned to 31-day billing cycles with 4-day buffer. The daily refresh
-schedule means caches are rebuilt every 24 hours regardless of TTL — the
-TTL is a safety net, not the primary refresh mechanism.
+Default: 3024000s (35 days). Set via CACHE_TTL environment variable. Aligned to 31-day billing cycles with 4-day buffer. The daily refresh schedule means caches are rebuilt every 24 hours regardless of TTL — the TTL is a safety net, not the primary refresh mechanism.
 Changing the Model
-Set the MODEL environment variable. The agent is tested with
-gemini-2.0-flash-lite but works with any Gemini model that supports
-content caching. Larger models improve response quality but increase cost —
-update the token rate constants in sales-agent/main.py accordingly.
+Set the MODEL environment variable. The agent is tested with gemini-2.0-flash-lite but works with any Gemini model that supports content caching. Larger models improve response quality but increase cost — update the token rate constants in sales-agent/main.py accordingly.
 Firestore Schema
 Collection	Document	Key Fields
 AgentConfig	SalesAgent	CacheMap (topic → cache resource name)
 AgentBudget	{tenant}_{YYYY-MM}	CurrentSpendUSD, ServiceTier, MonthlyLimitUSD, alert flags
-AgentSessions	{session_id}	PromptCount, ActiveFlow, LeadCaptured,
-ExpiresAt
-Leads	auto-generated	email, company, session_id, source,
-tier_at_capture
+AgentSessions	{session_id}	PromptCount, ActiveFlow, LeadCaptured, ExpiresAt
+Leads	auto-generated	email, company, session_id, source, tier_at_capture
 License
 MIT — see LICENSE for details.
-Use it, fork it, build on it. The architecture decisions are documented in
-inline comments throughout the codebase. If you find them useful, a star
-helps others find the repo.
- 
+Use it, fork it, build on it. The architecture decisions are documented in inline comments throughout the codebase. If you find them useful, a star helps others find the repo.
