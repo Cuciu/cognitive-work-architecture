@@ -9,8 +9,27 @@ A conversational AI that handles inbound sales conversations on a website with t
 > language before turn 3.
 ---
 ## Architecture Overview
+```mermaid
+flowchart LR
+    W[Widget<br/>browser] -->|HTTP POST| SA[Sales Agent<br/>Cloud Function]
+    SA --> VA[Vertex AI<br/>Gemini]
+    SA --> FS[Firestore<br/>state]
+    SA --> CL[Capture Lead<br/>Cloud Function]
 
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │ Widget │───▶│ Sales Agent │───▶│ Vertex AI │───▶│ Firestore │ │ (browser) │ │ (Cloud Fn) │ │ (Gemini) │ │ (state) │ └──────────────┘ └──────┬───────┘ └──────────────┘ └──────────────┘ │ ┌────────────┼────────────┐ ▼ ▼ ▼ ┌──────────┐ ┌──────────┐ ┌──────────┐ │ Capture │ │ Monitor │ │ Reset │ │ Lead │ │ Budget │ │ Budget │ └──────────┘ └──────────┘ └──────────┘
+    SCH[Cloud Scheduler] --> MB[Monitor Budget<br/>every 4h]
+    SCH --> RB[Reset Budget<br/>monthly]
+    SCH --> RC[Refresh Cache<br/>daily]
+
+    MB --> FS
+    RB --> FS
+    RC --> VA
+
+    style W fill:#0d497a,color:#fff
+    style SA fill:#0d497a,color:#fff
+    style VA fill:#1a73e8,color:#fff
+    style FS fill:#f9ab00,color:#000
+    style SCH fill:#666,color:#fff
+```
 
 ### Per-Topic Caching with Intent Classification
 The agent classifies each visitor's intent on their first message, locks a
@@ -21,7 +40,25 @@ cache. This means:
 - **Adding a new topic** = add one `.md` file + one `TOPIC_FILES` entry
 - **Cache miss** = agent still works with inline fallback (graceful, not broken)
 
-First message → classify_intent() → lock ActiveFlow on session │ ┌─────────────────────┼─────────────────────┐ ▼ ▼ ▼ Topic A cache Topic B cache GENERAL (KB content) (KB content) (system prompt │ │ + global.md) ▼ ▼ ▼ system_instruction system_instruction system_instruction injected at call injected at call injected at call
+```mermaid
+flowchart TD
+    MSG[First message] --> CL{classify_intent}
+    CL -->|TOPIC_A| CA[Topic A Cache<br/>KB content only]
+    CL -->|TOPIC_B| CB[Topic B Cache<br/>KB content only]
+    CL -->|GENERAL| GEN[No cache<br/>system prompt + global.md]
+
+    CA --> SYS[system_instruction<br/>injected at call time]
+    CB --> SYS
+    GEN --> SYS
+
+    SYS --> RESP[Generate response]
+    RESP --> P1[smart_truncate]
+    P1 --> P2[strip_premature_cta]
+    P2 --> P3[extract BOOK_CTA]
+    P3 --> P4[strip_urls]
+    P4 --> P5[CTA gate check]
+    P5 --> OUT[Response to visitor]
+```
 
 ### Budget Governance Lifecycle
 **Track** (per request) → **Monitor** (every 4h) → **Enforce** (auto-degrade) → **Reset** (monthly) → _new month_ → **Track** …
@@ -89,7 +126,51 @@ Most agent builders discover they've overspent when the invoice arrives. This ag
 ---
 ## Repository Structure
 
-skyalleys-sales-agent/ ├── .gitignore ├── LICENSE MIT ├── README.md This file ├── README-cloudshell.txt Quick-start for Cloud Shell │ ├── capture-lead/ │ ├── main.py Lead capture Cloud Function │ └── requirements.txt │ ├── refresh-cache/ │ ├── main.py Scheduled per-topic cache refresh │ ├── requirements.txt │ └── knowledge/ │ ├── README.md Expected file format │ └── example.md Template for KB files │ ├── sales-agent/ │ ├── main.py Core conversational agent │ ├── cache_setup.py CLI cache builder (manual/debug) │ ├── env.yaml.example Environment variable template │ ├── system_prompt.example.md System prompt template │ ├── requirements.txt │ └── knowledge/ │ ├── README.md Expected file format │ └── example.md Template for KB files │ ├── scheduled-jobs/ │ ├── monitor-budget/ │ │ ├── main.py Budget threshold monitor (every 4h) │ │ └── requirements.txt │ └── reset-budget/ │ ├── main.py Monthly budget reset │ └── requirements.txt │ ├── scripts/ │ ├── 01-enable-apis.sh Enable required GCP APIs │ └── 02-create-firestore.sh Create Firestore database │ └── widget/ ├── widget.html Self-contained chat widget (HTML+CSS+JS) └── widget.js Standalone JS (for CSP-restricted sites)
+```
+skyalleys-sales-agent/
+│
+├── .gitignore
+├── LICENSE                          MIT
+├── README.md
+├── README-cloudshell.txt            Cloud Shell quick-start
+│
+├── capture-lead/
+│   ├── main.py                      Lead capture endpoint
+│   └── requirements.txt
+│
+├── refresh-cache/
+│   ├── main.py                      Scheduled cache rebuild
+│   ├── requirements.txt
+│   └── knowledge/
+│       ├── README.md                KB file format docs
+│       └── example.md               KB template
+│
+├── sales-agent/
+│   ├── main.py                      Core agent logic
+│   ├── cache_setup.py               Manual cache builder (CLI)
+│   ├── env.yaml.example             Env var template
+│   ├── system_prompt.example.md     Prompt template
+│   ├── requirements.txt
+│   └── knowledge/
+│       ├── README.md                KB file format docs
+│       └── example.md               KB template
+│
+├── scheduled-jobs/
+│   ├── monitor-budget/
+│   │   ├── main.py                  Budget monitor (4h cycle)
+│   │   └── requirements.txt
+│   └── reset-budget/
+│       ├── main.py                  Monthly budget reset
+│       └── requirements.txt
+│
+├── scripts/
+│   ├── 01-enable-apis.sh            Enable GCP APIs
+│   └── 02-create-firestore.sh       Create Firestore DB
+│
+└── widget/
+    ├── widget.html                  Chat widget (single-file)
+    └── widget.js                    Standalone JS (CSP option)
+```
 
 ### What's Not in This Repo
 The following files are required at runtime but excluded from source control:
