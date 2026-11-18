@@ -1,8 +1,42 @@
+# ==============================
 # Secrets — never commit
+# ==============================
 .env
 *.env
-
+env.yaml
+*.key
+*.pem
+service-account*.json
+# ==============================
 # Proprietary content — runtime only
+# ==============================
 site_content_full.txt
-
-knowledge/*.md
+**/knowledge/*.md
+!**/knowledge/README.md
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+*.whl
+# ==============================
+# Google Cloud
+# ==============================
+.gcloudignore
+*.tfstate
+*.tfstate.backup
+# ==============================
+# IDE / OS
+# ==============================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
