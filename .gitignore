@@ -40,3 +40,7 @@ venv/
 *.swo
 .DS_Store
 Thumbs.db
+
+# System prompt (proprietary)
+**/system_prompt.md
+!**/system_prompt.example.md
