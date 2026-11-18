@@ -1,25 +1,17 @@
 """
-Cognitive Work Architecture — Site Sales Agent — Cache Setup (CLI)
-==================================================================
-Manual / CLI companion to the automated refresh-cache Cloud Function.
+Cache Setup: Manual / CLI cache builder
+Builds per-topic Vertex AI content caches and writes CacheMap to Firestore.
 
-Use this for:
-  - First-time cache creation during initial deployment
-  - Debugging cache issues in development
-  - Manual cache rotation when you don't want to wait for the scheduler
-
-Production cache refresh is handled by refresh-cache/main.py
-(Cloud Function on a schedule). This script exists for operational
-flexibility — you should never NEED it in steady state, but you
-will be glad it exists at 2am when something breaks.
-
-Repo:   cognitive-work-architecture/site-sales-agent
-Module: sales-agent/cache_setup.py
-License: MIT
+Architecture:
+  - System prompt lives in the agent (main.py) and is injected at call time
+    via system_instruction — it is NOT cached.
+  - Caches hold ONLY topic-scoped KB content, keeping them lean and cheap.
+  - Adding a new topic = add one KB file + one TOPIC_FILES entry.
 
 Usage:
-  $ export GCP_PROJECT=your-project-id
-  $ python cache_setup.py
+  python cache_setup.py
+
+For scheduled rebuilds, use the refresh-cache Cloud Function instead.
 """
 
 import os
@@ -27,145 +19,107 @@ from google import genai
 from google.genai import types
 from google.cloud import firestore
 
-# ---------------------------------------------------------------------------
-# Configuration — mirrors refresh-cache/main.py
-# ---------------------------------------------------------------------------
 PROJECT_ID = os.environ["GCP_PROJECT"]
-LOCATION   = os.environ.get("REGION", "global")
-MODEL      = os.environ.get("MODEL", "gemini-3.5-flash-lite")
+LOCATION = os.environ.get("REGION", "global")
+MODEL = os.environ.get("MODEL", "gemini-2.0-flash-lite")
+CACHE_DISPLAY_PREFIX = os.environ.get("CACHE_PREFIX", "agent")
 
 client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
-db     = firestore.Client()
+db = firestore.Client()
+
+# Resolve KB_DIR relative to THIS file so it works regardless of CWD.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+KB_DIR = os.environ.get("KB_DIR", os.path.join(_HERE, "knowledge"))
 
 # ---------------------------------------------------------------------------
-# SYSTEM PROMPT
+# Topic → KB filename mapping
+# Customize with your own service lines / knowledge domains.
+# Each topic gets its own cache. GENERAL has no KB cache:
+# the greeter runs on system_instruction alone.
 # ---------------------------------------------------------------------------
-# ⚠️  ARCHITECTURE DECISION: Prompt Duplication
-#
-# This prompt is intentionally duplicated across three files:
-#   1. sales-agent/main.py        — runtime agent
-#   2. sales-agent/cache_setup.py — manual cache creation (this file)
-#   3. refresh-cache/main.py      — automated cache refresh
-#
-# WHY duplicate instead of importing?
-#   - Each module deploys independently (separate Cloud Functions)
-#   - Shared imports create deployment coupling and versioning risk
-#   - A cache created with prompt version A must match the agent
-#     running prompt version A — import chains make this harder to verify
-#
-# TRADE-OFF: If you update the prompt, you must update all three files.
-# Mitigation: the comment "MUST be identical" is a manual contract.
-#
-# ALTERNATIVE (not implemented): Store the prompt in Firestore/GCS
-# and load at runtime. This adds a network dependency to cold start
-# but eliminates duplication. Choose based on your latency tolerance.
-# ---------------------------------------------------------------------------
+TOPIC_FILES = {
+    "TOPIC_A": "topic_a.md",
+    "TOPIC_B": "topic_b.md",
+    "TOPIC_C": "topic_c.md",
+    "TOPIC_D": "topic_d.md",
+    "TOPIC_E": "topic_e.md",
+    "TOPIC_F": "topic_f.md",
+    "TOPIC_G": "topic_g.md",
+}
 
-SYSTEM_PROMPT = (
-    "You are Sky Alleys' senior sales advisor — a direct, technically credible "
-    "peer who earns trust by demonstrating expertise, not by pushing meetings. "
-    "\n\n"
-    "ANSWER RULES: "
-    "Answer ONLY from the provided site content. Never invent capabilities. "
-    "Keep responses concise but complete — 2 to 5 sentences depending on "
-    "question complexity. Technical questions deserve technical depth. "
-    "This is a small chat window: use short paragraphs, never walls of text. "
-    "Finish every thought with a full sentence. "
-    "Vary your phrasing — never repeat the same opener or closer twice. "
-    "\n\n"
-    "CONVERSATION STATES — track which state you are in: "
-    "\n\n"
-    "STATE 1 DISCOVERY: "
-    "If they open with a greeting or vague request, ask ONE question about "
-    "their challenge. Enter only once. Never return to this state. "
-    "If they open with a specific question, skip directly to STATE 2 or 3. "
-    "\n\n"
-    "STATE 2 ACKNOWLEDGE: "
-    "Briefly validate why their challenge is hard or costly — one sentence. "
-    "Ask ONE clarifier only if the problem is genuinely ambiguous, "
-    "then move to STATE 3. "
-    "\n\n"
-    "STATE 3 SOLUTION (primary operating state): "
-    "Match their problem to a specific Sky Alleys capability. "
-    "Name the framework, method, or deliverable. Cite a proof point or "
-    "benchmark from the site content. "
-    "If they ask to go deeper or say 'tell me more' — expand with NEW "
-    "detail. Stay in STATE 3. Never restart discovery. Never repeat yourself. "
-    "After delivering a solution, offer to explore a related angle: "
-    "'I can also walk you through how this worked in [vertical/scenario]' "
-    "or ask a qualifying question to tailor further. "
-    "\n\n"
-    "STATE 4 INTENT (booking): "
-    "Enter ONLY when the visitor explicitly signals buying intent — "
-    "examples: asks about pricing, timelines, availability, next steps, "
-    "'how do we start', 'can we talk to someone', 'I want to explore this'. "
-    "Write ONE sentence inviting them to book a consultation, then end "
-    "your message with the exact marker [BOOK_CTA]. "
-    "Emit [BOOK_CTA] at most ONCE per conversation. "
-    "NEVER emit [BOOK_CTA] in your first two responses. "
-    "The visitor must have at least two substantive exchanges before "
-    "any booking suggestion is appropriate. "
-    "\n\n"
-    "LOW-ENERGY REPLIES — CRITICAL: "
-    "If the visitor replies with 'ok', 'sure', 'great', 'cool', 'thanks', "
-    "or similar after you presented a solution — this is NOT buying intent. "
-    "Do NOT move to STATE 4. Instead, offer one additional insight they "
-    "haven't seen yet: a related proof point, a different framework angle, "
-    "or a brief qualifying question. If they give two consecutive low-energy "
-    "replies, offer a graceful exit: 'Happy to answer anything else — "
-    "or I can send you our overview if you'd prefer to review offline.' "
-    "\n\n"
-    "CRITICAL RULES: "
-    "Once they state a problem, go DEEPER not WIDER. Only forward, never reset. "
-    "Never ask what brought them here more than once. "
-    "Never present the same answer twice — always add new detail. "
-    "NEVER write a URL or booking link in your text. "
-    "Use [BOOK_CTA] instead, only in STATE 4, maximum once. "
-    "A booking button is attached automatically whenever you emit [BOOK_CTA]. "
-    "Writing a raw URL is forbidden. "
-    "\n\n"
-    "TONE: Direct, senior, peer-to-peer. Trusted advisor, not salesperson. "
-    "You earn the meeting by demonstrating you know their world — "
-    "not by asking for it repeatedly."
-)
+# 35 days (covers 31-day billing cycle + buffer)
+CACHE_TTL = os.environ.get("CACHE_TTL", "3024000s")
+
+
+def _load_kb(filename: str) -> str:
+    """Load a knowledge base markdown file."""
+    path = os.path.join(KB_DIR, filename)
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def create_topic_cache(topic: str, filename: str) -> str | None:
+    """Create a KB-only Vertex AI content cache for a single topic.
+
+    Returns cache resource name or None on failure.
+    """
+    try:
+        kb = _load_kb(filename)
+    except FileNotFoundError:
+        print(f"[cache_setup] {topic}: KB file '{filename}' not found "
+              f"in '{KB_DIR}' — skipping.")
+        return None
+
+    if not kb.strip():
+        print(f"[cache_setup] {topic}: KB file '{filename}' is EMPTY — skipping.")
+        return None
+
+    try:
+        cache = client.caches.create(
+            model=MODEL,
+            config=types.CreateCachedContentConfig(
+                display_name=f"{CACHE_DISPLAY_PREFIX}_{topic.lower()}_kb",
+                # KB content only — no system_instruction in cache
+                contents=[kb],
+                ttl=CACHE_TTL,
+            ),
+        )
+        size_kb = round(len(kb.encode("utf-8")) / 1024, 1)
+        print(f"[cache_setup] {topic} cache created: {cache.name} "
+              f"(KB size: {size_kb} KB)")
+        return cache.name
+    except Exception as e:
+        print(f"[cache_setup] {topic} CACHE FAILED — reason: {str(e)[:300]}")
+        return None
 
 
 def create_site_cache(event=None, context=None):
-    """
-    Create the sales agent context cache and store its name in Firestore.
+    """Build all per-topic caches and store the CacheMap in Firestore."""
+    print(f"[cache_setup] Building caches from KB_DIR='{KB_DIR}' "
+          f"for topics: {list(TOPIC_FILES.keys())}")
 
-    Returns the cache resource name for verification/logging.
+    cache_map = {}
+    for topic, filename in TOPIC_FILES.items():
+        name = create_topic_cache(topic, filename)
+        if name:
+            cache_map[topic] = name
 
-    Unlike refresh-cache/main.py (which runs on a schedule with error
-    handling and graceful degradation), this script is designed to fail
-    loudly. If something is wrong, you want the stack trace immediately.
-    """
-    with open("site_content_full.txt") as f:
-        site = f.read()
+    if cache_map:
+        db.collection("AgentConfig").document("SalesAgent").set(
+            {"CacheMap": cache_map}, merge=True
+        )
+        print(f"[cache_setup] Stored CacheMap with {len(cache_map)}/"
+              f"{len(TOPIC_FILES)} topic caches: {list(cache_map.keys())}")
 
-    cache = client.caches.create(
-        model=MODEL,
-        config=types.CreateCachedContentConfig(
-            display_name="skyalleys_sales_site_context",
-            system_instruction=SYSTEM_PROMPT,
-            contents=[site],
-            ttl="90000s",  # 25 hours
-        ),
-    )
+        missing = [t for t in TOPIC_FILES if t not in cache_map]
+        if missing:
+            print(f"[cache_setup] WARNING: {len(missing)} topic(s) NOT cached: "
+                  f"{missing} — check filenames in '{KB_DIR}'.")
+    else:
+        print("[cache_setup] No caches created — agent falls back to inline context.")
 
-    db.collection("AgentConfig").document("SalesAgent").set(
-        {"CacheName": cache.name}, merge=True
-    )
-    print(f"Cache created: {cache.name}")
-    return cache.name
+    return cache_map
 
 
-# ---------------------------------------------------------------------------
-# CLI entry point — run directly for manual cache creation
-#   $ python cache_setup.py
-#
-# No arguments needed. Reads site_content_full.txt from current directory.
-# Requires GCP_PROJECT environment variable and authenticated gcloud CLI.
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     create_site_cache()
