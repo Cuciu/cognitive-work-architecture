@@ -1,0 +1,37 @@
+<!-- ===== Chat Widget — paste before </body> on your site ===== -->
+<meta charset="utf-8">
+<style>
+  :root{ --sa-brand:#0d6efd; }  /* Change to your brand colour */
+  #sa-launcher{position:fixed;bottom:24px;right:24px;z-index:9999;background:var(--sa-brand);color:#fff;
+    border:none;border-radius:50px;padding:14px 20px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.25);}
+  #sa-panel{position:fixed;bottom:24px;right:24px;z-index:9999;width:360px;max-width:92vw;height:520px;max-height:80vh;
+    display:none;flex-direction:column;background:#fff;border-radius:14px;overflow:hidden;
+    box-shadow:0 10px 40px rgba(0,0,0,.3);font-family:system-ui,Segoe UI,Arial,sans-serif;}
+  #sa-head{background:var(--sa-brand);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;}
+  #sa-head b{font-size:15px;} #sa-close{background:none;border:none;color:#fff;font-size:22px;line-height:1;}
+  #sa-log{flex:1;overflow-y:auto;padding:14px;background:#f7f8fa;}
+  .sa-msg{margin:8px 0;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.45;max-width:85%;word-wrap:break-word;}
+  .sa-user{background:var(--sa-brand);color:#fff;margin-left:auto;border-bottom-right-radius:3px;}
+  .sa-bot{background:#fff;color:#1a1a1a;border:1px solid #e6e8eb;border-bottom-left-radius:3px;}
+  .sa-typing{opacity:.6;} #sa-foot{display:flex;border-top:1px solid #e6e8eb;padding:8px;background:#fff;}
+  #sa-input{flex:1;border:1px solid #d7dbe0;border-radius:10px;padding:10px;font-size:14px;outline:none;}
+  #sa-send{margin-left:8px;background:var(--sa-brand);color:#fff;border:none;border-radius:10px;padding:0 16px;font-size:14px;}
+  #sa-send:disabled{opacity:.5;}
+  .sa-cta,.agent-cta{margin-top:6px;} .cta-button{display:inline-block;margin-top:6px;background:var(--sa-brand);color:#fff;
+    text-decoration:none;padding:8px 14px;border-radius:8px;font-size:13px;}
+  .sa-lead{margin-top:6px;} .sa-lead input{display:block;width:100%;margin:4px 0;padding:8px;border:1px solid #d7dbe0;border-radius:8px;font-size:13px;}
+  .sa-lead button{background:var(--sa-brand);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;margin-top:4px;}
+  #sa-lead-status{font-size:12px;color:#444;margin-top:4px;}
+</style>
+
+<button id="sa-launcher">💬 Chat with us</button>
+<div id="sa-panel">
+  <div id="sa-head"><b>Sales Assistant</b><button id="sa-close">×</button></div>
+  <div id="sa-log"></div>
+  <div id="sa-foot">
+    <input id="sa-input" type="text" placeholder="Ask about our services…" autocomplete="off"/>
+    <button id="sa-send">Send</button>
+  </div>
+</div>
+<script src="widget.js"></script>
+<!-- ===== End Chat Widget ===== -->
