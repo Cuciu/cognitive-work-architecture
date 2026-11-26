@@ -1,0 +1,4 @@
+functions-framework
+google-genai
+google-cloud-firestore
+requests
