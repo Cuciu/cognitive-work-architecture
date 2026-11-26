@@ -1,24 +1,46 @@
-Site Sales Agent
+# Site Sales Agent
 Production-grade AI sales agent with built-in budget governance, behavioral guardrails, and security — open source under MIT.
 A conversational AI that handles inbound sales conversations on a website with the same rigor you'd expect from a senior enterprise sales advisor.
-Prompt = suggestion. Code = law.
-Every behavioral rule is enforced in code, not just instructed in prompts. The model might ignore a prompt instruction. It cannot ignore a strip_premature_cta_language() function that regex-strips booking language before turn 3.
-Architecture Overview
-flowchart LR W[Widget<br/>browser] -->|HTTP POST + full history| A[Sales Agent<br/>Cloud Run] A --> CL[Capture Lead<br/>Cloud Function] A --> VA[Vertex AI<br/>Gemini] A --> FS[Firestore<br/>state + vectors] CS[Cloud Scheduler] --> RC[Refresh Cache<br/>daily] CS --> MB[Monitor Budget<br/>every 4h] CS --> RB[Reset Budget<br/>monthly] RC --> VA RC --> FS MB --> FS RB --> FS
+> Prompt = suggestion. Code = law.
+>
+> Every behavioral rule is enforced in code, not just instructed in prompts. The model might ignore a prompt instruction. It cannot ignore a
+> `strip_premature_cta_language()` function that regex-strips booking language before turn 3.
+---
+## Architecture Overview
+```mermaid
+flowchart LR
+    W[Widget<br/>browser] -->|HTTP POST + full history| A[Sales Agent<br/>Cloud Run]
+    A --> CL[Capture Lead<br/>Cloud Function]
+    A --> VA[Vertex AI<br/>Gemini]
+    A --> FS[Firestore<br/>state + vectors]
+    CS[Cloud Scheduler] --> RC[Refresh Cache<br/>on KB change]
+    CS --> MB[Monitor Budget<br/>every 4h]
+    CS --> RB[Reset Budget<br/>monthly]
+    RC --> VA
+    RC --> FS
+    MB --> FS
+    RB --> FS
 Topic-Routed Vector Retrieval with Intent Classification
 The agent classifies each visitor's intent on their first message, locks a topic flow for the session, and retrieves relevant knowledge chunks via topic-filtered vector search in Firestore.
 This means:
 System prompt lives in code, injected at call time — never cached
 Knowledge base is split per topic — one vector namespace per service area
-global.md is cached whole (router + voice) — never chunked
+global.md is cached whole (router + voice) via Vertex AI context caching — never chunked
 Topic KBs are chunked, embedded, and retrieved per-query via find_nearest
 Adding a new topic = add one .md file + one TOPIC_FILES entry
 Retrieval miss = agent still works with global fallback (graceful, not broken)
 flowchart TD M[First message] --> C{classify_intent} C -->|TOPIC_A| R1[Vector search<br/>namespace: TOPIC_A] C -->|TOPIC_B| R2[Vector search<br/>namespace: TOPIC_B] C -->|TOPIC_C| R3[Vector search<br/>namespace: TOPIC_C] C -->|GENERAL| G[Global fallback<br/>greeter only] R1 --> I[Inject top-K chunks<br/>as SITE CONTENT] R2 --> I R3 --> I G --> I I --> GEN[Generate response<br/>with system prompt]
 Flow is locked per session — the classifier runs once, then the topic sticks. This prevents mid-conversation topic drift and keeps retrieval focused.
-Why Vector Retrieval Instead of Context Caching
+Two-Layer Knowledge Architecture
+Layer	File	Mechanism	Cost Model
+Router + Voice	global.md	Vertex AI context cache (whole, 35-day TTL)	Token-hour storage — small, stable, worth caching
+Topic Knowledge	*.md per practice	Firestore vector search (chunked, embedded)	Pay-per-query — cost tracks actual usage
+Why this split?
+global.md is used on every turn (routing, persona, rules). It's small and stable — a genuine cache win. Topic KBs are used per-query when the visitor asks about a specific domain. Caching them 24×7 would create flat daily cost independent of traffic. Vector retrieval makes cost proportional to actual conversations.
+The router cache is refreshed on demand — when knowledge content changes, trigger the refresh via Pub/Sub. The 35-day TTL (3024000s) is a safety net covering a full billing cycle plus buffer, not the primary refresh mechanism.
+Why Vector Retrieval Instead of Per-Topic Context Caching
 Approach	Cost Model	Problem
-Per-topic context caches (old)	Token-hour storage — billed 24×7 regardless of traffic	$0.50–$2/day even with zero visitors
+Per-topic context caches	Token-hour storage — billed 24×7 regardless of traffic	$0.50–$2/day even with zero visitors
 Vector retrieval (current)	Pay-per-query — embed once, retrieve on demand	Cost tracks actual usage
 The old approach cached full knowledge files as Vertex AI context caches with 35-day TTLs. This created a flat daily cost that scaled with corpus size, not query volume. For a low-traffic sales agent, this is the wrong cost curve.
 The current architecture:
@@ -67,15 +89,13 @@ If the visitor refreshes the page, conversation resets (by design)
 Why: No PII retention on the server. No conversation database. No GDPR data subject requests against chat logs. The server is a pure function: (history, message) → response.
 🟢 Session-Scoped Flow Lock
 The intent classifier runs once — on the visitor's first message. The result is stored in Firestore as ActiveFlow on the session document. All subsequent turns use the locked topic for retrieval.
-Why: Prevents mid-conversation topic drift. If a visitor asks about cloud migration, then casually mentions costs, the agent stays in the cloud migration knowledge — it doesn't jump to FinOps. This keeps retrieval focused and responses coherent.
+Why: Prevents mid-conversation topic drift. If a visitor asks about cloud migration, then casually mentions costs, the agent stays in the cloud migration knowledge — it doesn't jump to cost optimization. This keeps retrieval focused and responses coherent.
 🔵 Content-Addressed Incremental Indexing
 Knowledge chunks are identified by a SHA-256 hash of {topic}::{content}. This means:
 Identical content = same ID — re-running the indexer skips unchanged chunks
 Changed content = new ID — edited paragraphs get new embeddings automatically
 Deleted content = pruned — stale chunks not in the current file are removed
 No full re-index — adding a new topic only embeds the new file's chunks
-chunk_id = sha256(f"{topic}::{content}")[:32]
-# e.g., "cloud_a3b7c9d1e5f2..."
 🔴 Anti-Bot Protection
 Cloudflare Turnstile runs in interaction-only mode:
 Invisible to real visitors — no CAPTCHA puzzles
@@ -84,7 +104,7 @@ Token verified server-side before any model call
 Widget queues the question and sends it when the token arrives — no UX delay
 Conversation State Machine
 The system prompt implements a 4-state conversation model:
-stateDiagram-v2 [*] --> DISCOVERY: Greeting / vague [*] --> SOLUTION: Specific question DISCOVERY --> ACKNOWLEDGE: Challenge stated ACKNOWLEDGE --> SOLUTION: Problem clear SOLUTION --> SOLUTION: Follow-up / "tell me more" SOLUTION --> INTENT: Buying signal detected INTENT --> [*]: CTA shown (once)
+stateDiagram-v2 [*] --> DISCOVERY: Greeting / vague [*] --> SOLUTION: Specific question DISCOVERY --> ACKNOWLEDGE: Challenge stated ACKNOWLEDGE --> SOLUTION: Problem clear SOLUTION --> SOLUTION: Follow-up / deeper SOLUTION --> INTENT: Buying signal detected INTENT --> [*]: CTA shown once
 State	Trigger	Behavior
 DISCOVERY	Greeting or vague opener	Ask ONE question. Enter once, never return.
 ACKNOWLEDGE	Challenge stated	Validate the pain. One sentence.
@@ -95,58 +115,58 @@ Repository Structure
 site-sales-agent/
 │
 ├── .gitignore
-├── LICENSE                     MIT
-├── README.md                   This file
+├── LICENSE                          MIT
+├── README.md                        This file
 │
 ├── capture-lead/
-│   ├── main.py                 Lead capture endpoint
+│   ├── main.py                      Lead capture endpoint
 │   └── requirements.txt
 │
 ├── refresh-cache/
-│   ├── main.py                 Scheduled cache rebuild
+│   ├── main.py                      Scheduled cache rebuild
 │   ├── requirements.txt
 │   └── knowledge/
-│       ├── README.md           KB file format docs
-│       └── sample-knowledge.md KB template
+│       ├── README.md                KB file format docs
+│       └── sample-knowledge.md      KB template
 │
 ├── sales-agent/
-│   ├── main.py                 Core agent logic
-│   ├── cache_setup.py          Vector index builder (CLI)
-│   ├── env.yaml.example        Env var template
+│   ├── main.py                      Core agent logic
+│   ├── cache_setup.py               Vector index builder (CLI)
+│   ├── env.yaml.example             Env var template
 │   ├── requirements.txt
 │   └── knowledge/
-│       ├── README.md           KB file format docs
-│       └── sample-practice.md  KB template
+│       ├── README.md                KB file format docs
+│       └── sample-practice.md       KB template
 │
 ├── scheduled-jobs/
 │   ├── monitor-budget/
-│   │   ├── main.py             Budget monitor (4h cycle)
+│   │   ├── main.py                  Budget monitor (4h cycle)
 │   │   └── requirements.txt
 │   └── reset-budget/
-│       ├── main.py             Monthly budget reset
+│       ├── main.py                  Monthly budget reset
 │       └── requirements.txt
 │
 ├── scripts/
-│   ├── 00-config.sh                  Shared env config
-│   ├── 01-enable-apis.sh             Enable GCP APIs
-│   ├── 02-create-firestore.sh        Create Firestore DB + vector index
-│   ├── 03-setup-turnstile-secret.sh  Turnstile in Secret Manager
-│   ├── 04-index-kb.sh                Build vector index from KB files
-│   ├── 05-deploy-refresh-cache.sh    Deploy cache refresh function
-│   ├── 06-deploy-sales-agent.sh      Deploy agent to Cloud Run
-│   ├── 09-cache-cost.sh              Inspect context cache costs
-│   ├── 10-delete-old-caches.sh       Delete legacy per-topic caches
-│   └── 12-test-agent.sh              Smoke test router classification
+│   ├── 00-config.sh                 Shared env config
+│   ├── 01-enable-apis.sh            Enable GCP APIs
+│   ├── 02-create-firestore.sh       Create Firestore DB + vector index
+│   ├── 03-setup-turnstile-secret.sh Turnstile in Secret Manager
+│   ├── 04-index-kb.sh               Build vector index from KB files
+│   ├── 05-deploy-refresh-cache.sh   Deploy cache refresh function
+│   ├── 06-deploy-sales-agent.sh     Deploy agent to Cloud Run
+│   ├── 09-cache-cost.sh             Inspect context cache costs
+│   ├── 10-delete-old-caches.sh      Delete legacy per-topic caches
+│   └── 12-test-agent.sh             Smoke test router classification
 │
 └── widget/
-    ├── widget.html             Chat widget (single-file)
-    └── widget.js               Standalone JS (CSP option)
+    ├── widget.html                  Chat widget (single-file)
+    └── widget.js                    Standalone JS (CSP option)
 What's Not in This Repo
 The following files are required at runtime but excluded from source control:
 File	Purpose	How to Create
 knowledge/*.md	Per-topic knowledge base content	Populate using knowledge/sample-practice.md as template
 env.yaml	Environment variables (project ID, URLs)	Copy env.yaml.example and fill in your values
-Turnstile secret	Bot protection key	Store in Secret Manager via scripts/03-setup-turnstile-secret.sh
+Turnstile secret	Bot protection key	Store via scripts/03-setup-turnstile-secret.sh
 Quick Start
 Prerequisites
 Google Cloud project with billing enabled
@@ -197,4 +217,3 @@ Issues and PRs welcome. If you deploy this for your own business, consider shari
 Prompt techniques that improved conversion
 Knowledge base structures that worked well
 Budget configurations for different traffic levels
-Cloudflare Turnstile
