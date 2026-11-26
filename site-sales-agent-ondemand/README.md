@@ -1,25 +1,10 @@
-# Site Sales Agent
+Site Sales Agent
 Production-grade AI sales agent with built-in budget governance, behavioral guardrails, and security — open source under MIT.
 A conversational AI that handles inbound sales conversations on a website with the same rigor you'd expect from a senior enterprise sales advisor.
-> Prompt = suggestion. Code = law.
->
-> Every behavioral rule is enforced in code, not just instructed in prompts. The model might ignore a prompt instruction. It cannot ignore a
-> `strip_premature_cta_language()` function that regex-strips booking language before turn 3.
----
-## Architecture Overview
-```mermaid
-flowchart LR
-    W[Widget<br/>browser] -->|HTTP POST + full history| A[Sales Agent<br/>Cloud Run]
-    A --> CL[Capture Lead<br/>Cloud Function]
-    A --> VA[Vertex AI<br/>Gemini]
-    A --> FS[Firestore<br/>state + vectors]
-    CS[Cloud Scheduler] --> RC[Refresh Cache<br/>daily]
-    CS --> MB[Monitor Budget<br/>every 4h]
-    CS --> RB[Reset Budget<br/>monthly]
-    RC --> VA
-    RC --> FS
-    MB --> FS
-    RB --> FS
+Prompt = suggestion. Code = law.
+Every behavioral rule is enforced in code, not just instructed in prompts. The model might ignore a prompt instruction. It cannot ignore a strip_premature_cta_language() function that regex-strips booking language before turn 3.
+Architecture Overview
+flowchart LR W[Widget<br/>browser] -->|HTTP POST + full history| A[Sales Agent<br/>Cloud Run] A --> CL[Capture Lead<br/>Cloud Function] A --> VA[Vertex AI<br/>Gemini] A --> FS[Firestore<br/>state + vectors] CS[Cloud Scheduler] --> RC[Refresh Cache<br/>daily] CS --> MB[Monitor Budget<br/>every 4h] CS --> RB[Reset Budget<br/>monthly] RC --> VA RC --> FS MB --> FS RB --> FS
 Topic-Routed Vector Retrieval with Intent Classification
 The agent classifies each visitor's intent on their first message, locks a topic flow for the session, and retrieves relevant knowledge chunks via topic-filtered vector search in Firestore.
 This means:
@@ -121,8 +106,8 @@ site-sales-agent/
 │   ├── main.py                 Scheduled cache rebuild
 │   ├── requirements.txt
 │   └── knowledge/
-│       ├── README.md            KB file format docs
-│       └── sample-knowledge.md  KB template
+│       ├── README.md           KB file format docs
+│       └── sample-knowledge.md KB template
 │
 ├── sales-agent/
 │   ├── main.py                 Core agent logic
@@ -130,8 +115,8 @@ site-sales-agent/
 │   ├── env.yaml.example        Env var template
 │   ├── requirements.txt
 │   └── knowledge/
-│       ├── README.md            KB file format docs
-│       └── sample-practice.md   KB template
+│       ├── README.md           KB file format docs
+│       └── sample-practice.md  KB template
 │
 ├── scheduled-jobs/
 │   ├── monitor-budget/
@@ -142,16 +127,16 @@ site-sales-agent/
 │       └── requirements.txt
 │
 ├── scripts/
-│   ├── 00-config.sh            Shared env config
-│   ├── 01-enable-apis.sh       Enable GCP APIs
-│   ├── 02-create-firestore.sh  Create Firestore DB + vector index
+│   ├── 00-config.sh                  Shared env config
+│   ├── 01-enable-apis.sh             Enable GCP APIs
+│   ├── 02-create-firestore.sh        Create Firestore DB + vector index
 │   ├── 03-setup-turnstile-secret.sh  Turnstile in Secret Manager
-│   ├── 04-index-kb.sh          Build vector index from KB files
-│   ├── 05-deploy-refresh-cache.sh  Deploy cache refresh function
-│   ├── 06-deploy-sales-agent.sh    Deploy agent to Cloud Run
-│   ├── 09-cache-cost.sh        Inspect context cache costs
-│   ├── 10-delete-old-caches.sh Delete legacy per-topic caches
-│   └── 12-test-agent.sh        Smoke test router classification
+│   ├── 04-index-kb.sh                Build vector index from KB files
+│   ├── 05-deploy-refresh-cache.sh    Deploy cache refresh function
+│   ├── 06-deploy-sales-agent.sh      Deploy agent to Cloud Run
+│   ├── 09-cache-cost.sh              Inspect context cache costs
+│   ├── 10-delete-old-caches.sh       Delete legacy per-topic caches
+│   └── 12-test-agent.sh              Smoke test router classification
 │
 └── widget/
     ├── widget.html             Chat widget (single-file)
@@ -212,4 +197,4 @@ Issues and PRs welcome. If you deploy this for your own business, consider shari
 Prompt techniques that improved conversion
 Knowledge base structures that worked well
 Budget configurations for different traffic levels
----
+Cloudflare Turnstile
